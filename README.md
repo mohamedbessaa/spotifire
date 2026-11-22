@@ -20,8 +20,27 @@ It is built from two open-source projects:
 
 ---
 
+## Why Spotifire?
+
+Spotifeur is an amazing project—its backend architecture, multi-source streaming, offline downloads, and ad-free playback are top-notch, and its UI is great. However, as a dedicated fan of Spotify's signature UI, I wanted that classic, sleek Spotify aesthetic without giving up any of Spotifeur's powerful capabilities.
+
+**Spotifire was created specifically for Spotify UI fans.** It brings together the robust backend of Spotifeur with the authentic Spotify look and feel ported from Spotui.
+
+---
+
+## Preview
+
+| Home | Search | Your Library | Accounts |
+| :---: | :---: | :---: | :---: |
+| <img src="docs/assets/img/screenshots/home.jpg" width="220" alt="Home Screen" /> | <img src="docs/assets/img/screenshots/search.jpg" width="220" alt="Search Screen" /> | <img src="docs/assets/img/screenshots/library.jpg" width="220" alt="Your Library" /> | <img src="docs/assets/img/screenshots/accounts.jpg" width="220" alt="Accounts Screen" /> |
+| Filter chips & quick shortcuts | Multi-source search & link import | Synced playlists & recents | Connect Spotify, YouTube & local files |
+
+---
+
 ## Contents
 
+- [Why Spotifire?](#why-spotifire)
+- [Preview](#preview)
 - [Features](#features)
 - [Screens](#screens)
 - [Offline listening](#offline-listening)
