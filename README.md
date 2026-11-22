@@ -1,183 +1,379 @@
-# Spotifeur
+# Spotifire
 
-<p align="center"><img src="docs/assets/img/banner.png" alt="Spotifeur — open-source music player for Android for Spotify, YouTube Music and local files, with a preview of the player" width="1200"></p>
+**Spotify and YouTube Music in one app, with the look of Spotify.**
 
-[Download APK](https://github.com/jean-voila/Spotifeur/releases/latest) · [Website](https://jean-voila.github.io/Spotifeur/) · [FAQ](docs/FAQ.md) · [Build from source](#build-and-contribute) · [Protocol notes](protocol/)
+Spotifire is a personal Android music player. It puts your Spotify library, your YouTube Music
+library and the music files on your phone side by side, in an interface modeled on the Spotify app,
+with offline downloads and no ads.
 
-[![CI](https://github.com/jean-voila/Spotifeur/actions/workflows/build.yml/badge.svg)](https://github.com/jean-voila/Spotifeur/actions/workflows/build.yml)
-[![Latest release](https://img.shields.io/github/v/release/jean-voila/Spotifeur?color=0f9d63)](https://github.com/jean-voila/Spotifeur/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/jean-voila/Spotifeur/total?color=0f9d63)](https://github.com/jean-voila/Spotifeur/releases/latest)
-[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-0f9d63)](LICENSE)
-[![Android 8.0+](https://img.shields.io/badge/Android-8.0%2B-0f9d63)](#install-in-three-steps)
+It is built from two open-source projects:
 
-Spotifeur is an open-source **music player for Android**. It plays your Spotify
-library with Spotify's own Android protocols and audio engine, the YouTube Music
-catalog with or without a Google account, and audio files on your phone. A Spotify
-account is optional. The interface uses Material 3 Expressive and is available
-in English and French.
+- **[Spotifeur](https://github.com/jean-voila/Spotifeur)** by jean-voila provides everything under the
+  hood: Spotify sign-in and library sync, playback through Spotify's own audio engine, YouTube Music,
+  the Google account, local files, downloads and offline playback.
+- **Spotui**, a Jetpack Compose Spotify clone, provides the design: the Spotify-style screens were
+  ported from it and rewired to Spotifeur's backend.
 
-## What it looks like
+> Spotifire is a personal project. It is **not affiliated with, endorsed by or connected to Spotify,
+> Google or the Spotifeur project**. Spotify is a trademark of Spotify AB; YouTube Music is a trademark
+> of Google LLC.
 
-![Spotifeur home screen, player, synced lyrics and queue in illustrated phone frames](docs/assets/img/preview-listening.png)
+---
 
-![Spotifeur album page, playlist, settings and appearance options in illustrated phone frames](docs/assets/img/preview-library.png)
+## Contents
 
-These are screenshots from the app, also used on the website. The phone frames
-are illustrations. Editable artwork is in [`design/`](design/).
+- [Features](#features)
+- [Screens](#screens)
+- [Offline listening](#offline-listening)
+- [Accounts](#accounts)
+- [Requirements](#requirements)
+- [Build and install](#build-and-install)
+- [First launch](#first-launch)
+- [How it works](#how-it-works)
+- [Privacy: no ads, no tracking](#privacy-no-ads-no-tracking)
+- [Project structure](#project-structure)
+- [FAQ](#faq)
+- [Credits](#credits)
+- [License](#license)
+
+---
 
 ## Features
 
-- **Spotify, YouTube Music and local files.** Search, play and combine tracks in
-  playlists. Import playlist links or CSV files, and export playlists as CSV.
-- **Library and playlists.** Saved tracks, albums, artists and Spotify playlists
-  sync with your account. Create and edit playlists, including their covers.
-- **Player, queue and lyrics.** Seek, shuffle, repeat, sleep timer, synced lyrics,
-  a queue you can reorder and listening history across all three sources.
-- **Offline playback.** Download tracks, albums and playlists. Adjust the audio
-  cache size, prefetch depth and quality for Wi-Fi, mobile data and downloads.
-- **Appearance and controls.** Light and dark themes, album colors, player styles,
-  configurable home shelves, gestures and an equalizer.
-- **Application updates.** Checks GitHub releases at startup, shows release notes,
-  downloads the APK and opens Android's installation confirmation. Dismissed updates
-  are offered again at startup after 24 hours; manual checks are always available.
-- **Music only.** No podcasts, audiobooks, videos, Canvas loops or promoted content.
+### Three sources, one library
 
-<details>
-<summary><b>All features and settings</b></summary>
+| Source | What you get |
+| --- | --- |
+| **Spotify** | Your playlists, Liked Songs, saved albums and followed artists, synced both ways with your account. Full-length playback through Spotify's own audio engine. Search, radios, lyrics, artist pages. |
+| **YouTube Music** | The whole YouTube Music catalog, searchable and playable **with or without a Google account**. With a Google account: your YouTube Music playlists, which you can create, rename, edit and delete. |
+| **Your phone** | The music files stored on the device, playable next to everything else. |
 
-- **Home and library.** Pinned items, recently played tracks, downloads, liked songs, playlists, albums, artists and local files. Each home shelf can be shown or hidden, moved, and laid out as a row, a large row, a grid, a list or pills, with the number of items you choose. The buttons of album and playlist pages can be arranged as well, the others staying in a ⋮ menu. Pins are stored on the device only.
-- **Player.** Full-screen player with seek bar, queue, shuffle, repeat, sleep timer, a ⋮ button for the options of the current track (can be hidden), and the codec and bitrate of the current track if you want them. Swiping the mini player left or right changes track (it can also close the player, or do nothing).
-- **Audio quality.** Separate settings for Wi-Fi, mobile data and downloads: Normal (AAC 128 kbit/s), Very high (up to AAC 256 kbit/s) or Automatic. Playback and downloads use the quality authorized by the Spotify account: 128 kbit/s for Free, up to 256 kbit/s for Premium. Optional volume normalization from the loudness Spotify and YouTube Music publish for each track.
-- **Listening history.** Tracks played in Spotifeur from Spotify, YouTube Music and local files, together with what Spotify reports from your other apps and devices, grouped by day.
-- **Lyrics.** Synced lyrics from Spotify, with an immersive mode. When Spotify has none, Spotifeur can look them up on LRCLIB.
-- **Queue.** Reorder by dragging, swipe to remove, optional history of played tracks. The tracks you queued are shown apart from the rest of the list.
-- **Playlists.** Create a playlist on your Spotify account, rename it, set a cover from your photos, publish it on your profile, add Spotify's recommendations and remove tracks. Multi-service playlists are stored on the device, take a cover from your photos and can mix Spotify, YouTube Music and local tracks, with a badge showing each track's source. Local files can be added to Spotify playlists as Spotify's own local file references, and Spotify playlists that refer to local files play them from the phone's storage. Long-press a playlist to delete it.
-- **Converter.** Convert a playlist between Spotify, YouTube Music and multi-service playlists, in every direction (playlist page → ⋮ → Convert to…). Matches on the destination appear as they are found, uncertain ones are highlighted, and each track can be replaced by another search result or left out before the new playlist is created.
-- **Import and export.** Export a playlist as CSV, and import a CSV exported by Spotifeur or a YouTube, YouTube Music or Spotify playlist link.
-- **YouTube Music.** Search and play the YouTube Music catalog without a Google account, with the same downloads, cache, queue and playlists as Spotify tracks. Without a Spotify account, Spotify tracks play from their closest YouTube Music match (title, artist, album and duration).
-- **Google account.** Connect a Google account in Settings → Accounts to see your YouTube Music playlists in the library, create playlists on the account, rename them, make them public or private, add and remove tracks, and delete them. Audio still plays without the account.
-- **Liked YouTube Music tracks.** YouTube Music tracks can be liked like Spotify ones. They appear at the top of Liked songs, and are also liked on YouTube Music when a Google account is connected.
-- **Albums and artists.** Album pages, and artist pages with monthly listeners, popular tracks and their play counts, popular releases, albums, singles and EPs, compilations, appearances, related artists and the biography. YouTube Music tracks open YouTube Music's album and artist pages. Radios based on a track, an album, an artist or a playlist.
-- **Swipe on tracks.** Swiping a track right adds it to the queue. Each direction can be set to add to the queue, play next, save to Liked songs, remove from the playlist, or nothing. Recent searches follow the swipe-right setting.
-- **Search.** One search across Spotify, YouTube Music and the device's own files, for tracks, albums, artists and playlists, most relevant first, shown as each source answers, with paging. A setting shows a choice to search one source alone. Recent searches list what you opened or played; tapping one leaves it in place, and the current track is highlighted. Each playlist has its own search by title, artist or album, above its first track.
-- **Offline.** Download albums, playlists or tracks. Recently played and upcoming tracks are kept in a cache, encrypted for Spotify (512 MB to 32 GB, up to 20 tracks ahead). An offline mode cuts all network access from the app.
-- **Background playback.** Media notification, lock screen and Bluetooth controls, resume when headphones reconnect.
-- **Equalizer.** Presets, custom presets, bass boost, virtualizer and loudness.
-- **Appearance.** Light, dark or system theme, dynamic colors from the album art with several palette styles and high-contrast player controls, floating or full-width navigation bar, home collage patterns, carousel style, blur on or off, smooth corners, compact lists, English or French.
-- **Cast.** Google Cast for local files.
-- **Backup.** Export and import your settings, pins and multi-service playlists.
-- **Diagnostic report.** Recent errors and the account's plan entitlements, without usernames or identifiers, to paste into a bug report.
+A small badge on each song and playlist shows where it comes from: green for Spotify, red for
+YouTube Music, blue for files on the phone. Spotify items, the default, carry no badge in song lists.
 
-</details>
+### Spotify-style interface
 
-### Compared with the official app
+- **Pure black theme** with Spotify's green accent and Spotify-style typography.
+- **Bottom bar** with Home, Search and Your Library, and a **floating mini player** tinted with the
+  colors of the current cover. Swipe the mini player to change song.
+- **Now Playing** screen with the cover in the middle and a **glow made from the cover's colors**
+  filling the background. Below the cover you get:
+  - the line of lyrics being sung
+  - the title and artist, with ⊕ to save the song
+  - a thin seek bar, then shuffle, previous, play/pause, next and the sleep timer
+  - output device, share and queue buttons
+  - a lyrics card further down
+- **Synced lyrics** from Spotify, or from LRCLIB when Spotify has none. Tap a line to jump to it.
+- **Queue view** with "Now playing", "Next from…", tap to jump, and remove or clear.
 
-| | Official Spotify app | Spotifeur |
-| --- | --- | --- |
-| Your library, playlists, saved tracks, albums and artists | Yes | Yes, same account, synced both ways |
-| Full-length playback, seek, queue, shuffle, repeat | Yes | Yes, with Spotify's own audio engine |
-| Search, radios, lyrics, playlist recommendations | Yes | Yes |
-| Create and edit playlists, custom covers | Yes | Yes |
-| Offline downloads and audio cache | Yes | Yes, with an adjustable cache size and prefetch depth |
-| Podcasts, audiobooks, videos | Yes | No |
-| Canvas loops, promoted content, ads banners | Yes | No |
-| YouTube Music and local files, in the same playlists | No | Yes |
-| YouTube Music playlists of a Google account | No | Yes |
-| Convert playlists between Spotify and YouTube Music | No | Yes |
-| Use without a Spotify account | No | Yes, with YouTube Music and local files |
-| Themes, player styles, navigation bar, equalizer, gestures | Few options | Many options |
+### Things Spotify doesn't do
 
-Spotifeur uses the same services as the official Android app, so what you save, follow or edit in one shows up in the other.
+- **Mixed playlists** that hold Spotify songs, YouTube Music songs and local files together.
+- **Playlist converter.** A playlist's **⋮** menu has **Convert to Spotify / YouTube Music**. Matches
+  appear as they are found, uncertain ones are highlighted, and you can swap or skip a song before
+  the new playlist is created.
+- **Import** a Spotify, YouTube or YouTube Music playlist link, or a CSV file. **Export** any playlist
+  as CSV.
+- **Source filters** on Home, Search and Your Library: All / Spotify / YouTube Music / On this phone
+  / Mixed.
+- **No Spotify account needed.** You can use the app with YouTube Music and local files only, and
+  connect Spotify later.
 
-## Install in three steps
+### Everything else
 
-1. **Download.** Get `Spotifeur-vX.Y.Z.apk` from the
-   [latest release](https://github.com/jean-voila/Spotifeur/releases/latest) and
-   check its SHA-256 against the release notes.
-2. **Install.** Open the APK on an ARM64 phone with Android 8.0 or later.
-3. **Set up.** Sign in with your Spotify email address and the code Spotify sends
-   you, or with the Google account linked to your Spotify account, or continue
-   without an account for YouTube Music and local files.
+- Pins, listening history, an equalizer (presets, bass boost, virtualizer), sleep timer, volume
+  normalization, Google Cast for local files.
+- Lock screen, notification and Bluetooth controls; playback continues in the background.
+- Settings backup and restore, a diagnostic report, English and French.
 
-See the [FAQ](docs/FAQ.md) for account, playback and installation details.
+---
 
-## Technical details
+## Screens
 
-<details>
-<summary><b>Protocols and audio engine</b></summary>
+| Screen | What is on it |
+| --- | --- |
+| **Home** | Greeting, source filter chips, a 2-column grid of shortcuts (Liked Songs, pins, recent), then rows: Jump back in, Spotify playlists, YouTube Music playlists, mixed playlists, albums, artists, downloads, music on the phone. |
+| **Search** | White search box, colored "Browse all" genre tiles, recent searches, results from every source as they arrive with infinite scrolling, source chips, and import from a link. |
+| **Your Library** | Filter chips (Playlists, Albums, Artists, Downloaded, YouTube Music, Mixed, On this phone), sort by recents, alphabetical or creator, search inside the library, pinned items first, create or import a playlist. |
+| **Playlist / Album** | Gradient from the cover's color, large cover, green play button, shuffle, save, download with a progress ring, ⋮ menu (add songs, edit, convert, delete, more). |
+| **Artist** | Full-width header photo, monthly listeners, Follow, popular songs with play counts, releases (albums, singles, compilations, appears on), Fans also like, About. |
+| **Now Playing** | See above. |
+| **Downloads** | Storage used and free, download quality, offline mode, what is downloading (with pause, resume and cancel), downloaded albums and playlists, downloaded songs. |
+| **Accounts** | Connect or disconnect Spotify and Google / YouTube Music, rescan phone music; links to Settings, history, equalizer, downloads and storage. Open it from the round avatar at the top left. |
 
-For Spotify, Spotifeur does not use the public Web API, App Remote, a WebView or the installed Spotify app. It talks to Spotify the way the official Android app does:
+---
 
-- **Sign-in** with Login5 and ClientToken, using a code sent to your email address (or a password). The session is encrypted with Android Keystore.
-- **Library and catalog** through Playlist4, Collection v2, Extended Metadata and the search service.
-- **Audio** through HLS manifests processed by Spotify's own native engine, loaded unchanged from the official APK you supply at build time.
+## Offline listening
 
-YouTube Music goes through the anonymous InnerTube requests of music.youtube.com for search and playlists, and through the player endpoint for audio streams, read in byte ranges. With a Google account, the library and playlist edits use the same InnerTube requests as the music.youtube.com web client, with the cookies left by Google's sign-in page and its `SAPISIDHASH` authorization; audio requests stay anonymous. This part is adapted from [Resona](https://github.com/code-saksham-hash/Resona). Without a Spotify account, a Spotify playlist link is read from Spotify's public embed page, which lists its first 100 tracks.
+Download music once, play it with no connection, and it stays after the app or phone restarts.
 
-Everything learned along the way is documented in [`protocol/`](protocol/), as a reference you can read without the code.
+### What you can do
 
-Spotify downloads stay encrypted and are processed by Spotify's engine at playback
-time. Connections go directly from the app to the services. The build uses the
-official Spotify APK you supply.
+- **Download** a single song (long-press it or tap **⋮**, then **Download**), a whole **album** or a
+  whole **playlist** (the ⬇ button next to the green play button).
+- **Follow progress**: the button turns into a ring with the percentage; the Downloads screen shows
+  every download with its progress and time left; a notification shows overall progress.
+- **Pause and resume all** downloads. The pause is kept even if you close the app, and downloads pick
+  up where they stopped, not from zero.
+- **Cancel** a download in progress.
+- **Remove** a downloaded album or playlist, a **single song** (even one that came with an album, the
+  rest of the album stays), or **everything** at once.
+- **Choose the quality**: Normal (AAC 128 kbit/s) or Very high (up to AAC 256 kbit/s, as your
+  Spotify plan allows). It applies to new downloads.
+- **Offline mode**: one switch makes the app use no network at all, and play only what is on the
+  phone.
 
-</details>
+### Good to know
 
-<details>
-<summary><b>Account and privacy</b></summary>
+- **No duplicates.** A song that is in two downloaded playlists is stored once.
+- **Downloads and cache are separate.** Downloads are kept until you remove them. Songs you only
+  listened to are kept for a while in a separate cache, whose size you set in Settings → Storage, and
+  are deleted as new ones come in.
+- **When you are offline**, a bar at the bottom says so, and songs that cannot play right now are faded.
+- **Interrupted downloads** (no connection, app closed, phone restarted) wait and continue by
+  themselves once the connection is back.
 
-- There is no Spotifeur server, no analytics and no tracking. The app talks to Spotify, to YouTube Music, and to [LRCLIB](https://lrclib.net) for lyrics Spotify does not have (title, artist, album and duration only; you can turn it off).
-- Your password is never stored. The email-code sign-in does not use one at all. Signing in to Spotify with Google happens on Google's page; Spotifeur only passes the one-time code it returns to Spotify and keeps nothing else from it.
-- The session credential stays on your device, encrypted with Android Keystore.
-- A Google account is signed in on Google's own page. Spotifeur keeps the cookies it leaves, encrypted with Android Keystore, and only sends them to music.youtube.com.
-- Each release lists the SHA-256 of the APK and of its signing certificate. You can also build the APK yourself from this source and your own copy of the official Spotify APK.
+### Spotify Free vs Premium
 
-</details>
+Before downloading a Spotify song, Spotifire asks your Spotify account whether offline listening is
+allowed, the same check the official app makes. **Spotify only allows it on Premium**, so:
 
-## Documentation
+| Account | Spotify songs | YouTube Music songs | Phone files |
+| --- | --- | --- | --- |
+| Spotify Premium | ✅ download | ✅ download | ✅ always offline |
+| Spotify Free | ❌ skipped | ✅ download | ✅ always offline |
+| No Spotify account | — | ✅ download | ✅ always offline |
 
-- [Protocol notes](protocol/): ClientToken, Login5, catalog, library, playlists, audio delivery, native engine, offline, Spotify Connect
-- [Native runtime](native-runtime/README.md)
-- [FAQ](docs/FAQ.md)
-- [Privacy](docs/PRIVACY.md)
-- [Contributing](CONTRIBUTING.md)
-- [Code of conduct](CODE_OF_CONDUCT.md)
-- [Security policy](SECURITY.md)
+On a Free account, to listen offline to a Spotify playlist, convert it to YouTube Music
+(**⋮ → Convert to YouTube Music**) and download the new playlist.
 
-## Build and contribute
+---
 
-<a id="build-from-source"></a>
+## Accounts
 
-Requirements: JDK 21, Android SDK with platform 37, an ARM64 Android device (Android 8.0 or later), and the official Spotify Android **APKM, version 9.2.0.26** (build 148373686). The build checks the SHA-256 of the files it extracts and stops if they differ.
+Both accounts are optional and independent.
 
-```sh
-git clone https://github.com/jean-voila/Spotifeur.git
-cd Spotifeur
-./gradlew :app:assembleDebug -PspotifyArtifact=/path/to/com.spotify.music_9.2.0.26.apkm
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+**Spotify.** You can sign in three ways:
+
+- your email: Spotify sends you a code
+- your email or username and password
+- Google, for Spotify accounts linked to Google
+
+The session is stored encrypted with the Android Keystore. Spotifire talks to Spotify the way the
+official Android app does (Login5, Playlist4, Collection, Extended Metadata). It doesn't use the
+public Web API, a WebView player or the installed Spotify app.
+
+**Google / YouTube Music.** Tap the avatar → **Connect Google** and sign in on Google's own page.
+Your YouTube Music playlists then appear in Your Library under the **YouTube Music** chip. Search
+and playback of YouTube Music work without this account.
+
+---
+
+## Requirements
+
+**Phone**
+
+- An **ARM64** Android phone with **Android 8.0 or newer**. Almost every phone from the last six years
+  qualifies. Spotify's audio engine exists for ARM64 only.
+
+**Computer, to build the app**
+
+- **JDK 21**: `winget install EclipseAdoptium.Temurin.21.JDK`
+- **Android SDK** with Android API **37**, the latest Build-Tools and Platform-Tools. The easiest way
+  to get it is Android Studio (`winget install Google.AndroidStudio` → More Actions → SDK Manager).
+- **Git** (on Windows, Git for Windows: part of the build runs a bash script with its `bash.exe`).
+- Environment variables `JAVA_HOME` and `ANDROID_HOME`.
+- **The official Spotify APKM, version 9.2.0.26** (build 148373686), see below.
+
+### The Spotify APKM
+
+Spotify playback uses Spotify's own audio engine, taken unchanged from the official app. You supply
+the official app package; it is **not** included in this repository and must never be committed.
+
+1. Get the **APKM bundle** of Spotify **9.2.0.26**, the variant that contains `arm64-v8a`. Version
+   and format must match exactly.
+2. Put it at `native-runtime/artifacts/spotify-9.2.0.26.apkm`.
+
+The build checks the SHA-256 of what it extracts and stops if it differs:
+
+```
+base.apk                     cc165669d31851b1193cae7d54c9261579c431b432080970f460704d06e4612f
+liborbit-jni-spotify.so      2353f26f5e174917b36c3c9de4538717c6348cc0bacf8b2c094f22d1447538e2
 ```
 
-You can also place the APKM at `native-runtime/artifacts/spotify-9.2.0.26.apkm`. Nothing is downloaded automatically. See [`native-runtime/README.md`](native-runtime/README.md) for details.
+Without the APKM you can still build (see below). Everything works except Spotify playback, which
+stops after a few seconds.
 
-Without the APKM, `-PnativeRuntime=false` builds the app and runs the tests, but playback stops after the first seconds of each track. The [CI](.github/workflows/build.yml) uses this mode.
+---
 
-```sh
-./gradlew -PnativeRuntime=false :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
+## Build and install
+
+```powershell
+git clone https://github.com/mohamedbessaa/spotifire.git
+cd spotifire
+
+# Full build, with Spotify playback (needs the APKM in native-runtime/artifacts/)
+.\gradlew.bat :app:assembleDebug
+
+# Or without the APKM
+.\gradlew.bat :app:assembleDebug -PnativeRuntime=false
 ```
 
-A build you make yourself is signed with your own key: uninstall a release build first (this erases the session and downloads).
+On macOS or Linux, use `./gradlew` instead of `.\gradlew.bat`.
 
-See [contributing](CONTRIBUTING.md), [issues](https://github.com/jean-voila/Spotifeur/issues)
-and [security reporting](SECURITY.md). The [CI](.github/workflows/build.yml) builds
-the app without the native runtime and runs unit tests and lint.
+The first build downloads Gradle and the libraries (about 5–10 minutes). The APK is written to:
 
-## Support
+```
+app/build/outputs/apk/debug/app-debug.apk
+```
 
-[GitHub Sponsors](https://github.com/sponsors/jean-voila) · [Buy me a coffee](https://buymeacoffee.com/jean_voila)
+**Install it**, either way:
 
-## Credits and license
+- **USB:** enable *Developer options → USB debugging* on the phone (tap *Build number* seven times in
+  *About phone*), connect it, then run
+  `adb install -r app/build/outputs/apk/debug/app-debug.apk`
+- **Copy:** send the APK to the phone (cable, cloud, messaging) and open it. Allow "Install unknown
+  apps" when Android asks.
 
-- [librespot](https://github.com/librespot-org/librespot) for its public work on Spotify's protocols.
-- [Resona](https://github.com/code-saksham-hash/Resona) for its YouTube Music catalog and stream access.
-- [AndroidX Media3](https://github.com/androidx/media), [Jetpack Compose](https://developer.android.com/compose), [OkHttp](https://square.github.io/okhttp/), [Coil](https://coil-kt.github.io/coil/) and [LRCLIB](https://lrclib.net).
+Notes:
 
-[GNU General Public License v3.0](LICENSE).
+- The app installs as `app.spotifire`, so it lives **next to** Spotifeur or Spotify without replacing
+  them.
+- With the engine included, the debug build is intentionally **not debuggable**: Spotify's engine is
+  rejected by Android's CheckJNI, which debuggable apps enable.
+- **Run the unit tests** with `.\gradlew.bat :app:testDebugUnitTest`.
+
+---
+
+## First launch
+
+1. Choose **Log in to Spotify with email**, **Continue with Google**, **Log in with password**, or
+   **Continue without Spotify**.
+2. Allow access to audio files if you want the music on your phone in the app.
+3. Optional: tap the round **avatar** (top left) → **Connect Google** for your YouTube Music playlists.
+4. Optional: open a playlist and tap ⬇ to keep it offline.
+
+---
+
+## How it works
+
+```
+ ┌───────────────────────── Spotify-style UI (spotifire/) ─────────────────────────┐
+ │ Home · Search · Library · Playlist/Album · Artist · Now Playing · Downloads ... │
+ └────────────────────────────────────┬────────────────────────────────────────────┘
+                                      │ StateFlows and actions
+                          SpotifeurModel + PlayerViewModel
+          ┌───────────────────────────┼──────────────────────────────┐
+     Spotify (data/)          YouTube Music (data/youtube/)     Phone files
+  Login5, Playlist4,          InnerTube search, playlists,      MediaStore
+  Collection, metadata        Google account (cookies)
+          │                           │                              │
+          └──────────── Media3 player (playback/SpotifyPlayer) ──────┘
+              spotify:  → HLS through Spotify's native engine (Orbit)
+              ytm://    → progressive stream (YouTubeDataSource)
+              file      → local file
+                      reads downloads first, then the cache, then the network
+```
+
+**Spotify audio** is delivered as encrypted HLS. Spotify's own engine processes each sample at
+playback time. For offline playback, the encrypted segments and the engine's own key response are
+stored, encrypted at rest with an Android Keystore key, and handed back to the engine later. The
+audio is never decrypted to a file: downloaded Spotify songs only play inside Spotifire. The full
+protocol notes are in [`protocol/`](protocol/), especially
+[`07-audio-delivery.md`](protocol/07-audio-delivery.md), [`08-native-engine.md`](protocol/08-native-engine.md)
+and [`09-offline.md`](protocol/09-offline.md).
+
+**YouTube Music audio** is read in byte ranges through the anonymous player endpoint and stored in the
+same download system.
+
+**Downloads** use AndroidX Media3's `DownloadManager` with a persistent index, a dedicated cache that
+is never evicted, a foreground service so downloads continue when the app is closed, and automatic
+pause and resume when the connection drops and returns.
+
+---
+
+## Privacy: no ads, no tracking
+
+- **No ads**: no ad SDKs, banners, sponsored songs or promoted content, on any screen.
+- **No analytics** and no crash-reporting services. Diagnostics are recorded on the phone only. The
+  diagnostic report in Settings leaves out usernames and identifiers and is shared only if you copy it
+  yourself.
+- **Only music**: no podcasts, audiobooks, videos or Canvas loops.
+- Connections go directly from the phone to Spotify, YouTube / Google and LRCLIB (lyrics).
+- **One dependency to be aware of:** Google Cast (`play-services-cast-framework`, used to cast local
+  files) brings in Google's `datatransport` logging library, as every app using the Cast SDK does.
+- **Update checks are turned off.** Spotifeur's built-in updater would install Spotifeur's releases,
+  so Spotifire gets new versions by rebuilding from this repository.
+
+---
+
+## Project structure
+
+| Path | Contents |
+| --- | --- |
+| `app/src/main/java/fr/spotifeur/spotifire/` | **Spotifire's interface**: `theme/` (palette, fonts), `components/` (covers, rows, pills, mini player, bottom bar), `screens/` (Home, Search, Library, collections, artist, Now Playing, Downloads, accounts and login), `SpotifireMain.kt` (navigation) |
+| `app/src/main/java/fr/spotifeur/data/` | Spotify protocols, library, catalog, search, playlists, lyrics; `youtube/` for YouTube Music and the Google account |
+| `app/src/main/java/fr/spotifeur/playback/` | Player, playback service, native engine bridge, audio cache, downloads (`DownloadCenter.kt`) |
+| `app/src/main/java/fr/spotifeur/SpotifeurModel.kt` | The state and actions the interface uses |
+| `app/src/main/java/fr/spotifeur/presentation/` | Spotifeur's own screens still used: Settings, equalizer, history, Google sign-in, playlist converter |
+| `native-runtime/` | Bridge to Spotify's engine; `artifacts/` holds your APKM (ignored by Git) |
+| `protocol/` | Spotifeur's documentation of the protocols |
+
+The Kotlin package is still `fr.spotifeur`, so the code stays easy to compare with upstream Spotifeur.
+
+---
+
+## FAQ
+
+**Can I download Spotify songs with a Free account?**
+No. Spotify allows offline listening on Premium only, and Spotifire respects that. YouTube Music songs
+and phone files work offline on any account; see [Spotify Free vs Premium](#spotify-free-vs-premium).
+
+**Can I export downloads as MP3 files?**
+No. Spotify downloads stay encrypted and play only inside the app, as in the official app.
+
+**Spotify songs stop after a few seconds.**
+The app was built without the engine: either the APKM is missing, or the build used
+`-PnativeRuntime=false`. Put the APKM in place and rebuild.
+
+**The build says the artifact differs from Spotify Android 9.2.0.26.**
+The APKM is another version or variant. You need exactly 9.2.0.26, as an APKM bundle with arm64-v8a.
+
+**Will it run on an emulator?**
+Not with Spotify playback: the engine is ARM64 only. YouTube Music and local files can work.
+
+**Is there a light theme?**
+No, Spotifire is always dark, like Spotify.
+
+**Is there a background video on Now Playing?**
+No. Spotify's Canvas videos are not supported. The cover and its color glow take that place.
+
+---
+
+## Credits
+
+- **[Spotifeur](https://github.com/jean-voila/Spotifeur)** by jean-voila: the whole backend, playback,
+  downloads, settings and protocol documentation. GPL-3.0.
+- **Spotui**: the Spotify-style interface Spotifire's screens are ported from, itself building on
+  Meld, [Neptune](https://github.com/navneet851/spotify-clone-jetpack-compose),
+  [SpotiFLAC](https://github.com/spotbye/SpotiFLAC) and [SimpMusic](https://github.com/maxrave-dev/SimpMusic). GPL-3.0.
+- Credited by Spotifeur: [librespot](https://github.com/librespot-org/librespot) for its public work on
+  Spotify's protocols, [Resona](https://github.com/code-saksham-hash/Resona) for YouTube Music catalog
+  and stream access.
+- Libraries: [AndroidX Media3](https://github.com/androidx/media),
+  [Jetpack Compose](https://developer.android.com/compose), [OkHttp](https://square.github.io/okhttp/),
+  [Coil](https://coil-kt.github.io/coil/) and [LRCLIB](https://lrclib.net) for lyrics.
+
+## License
+
+Spotifire is released under the [GNU General Public License v3.0](LICENSE), like Spotifeur and Spotui.
+Anyone who distributes a modified version must also publish its source under the GPL-3.0.
+
+Not covered by this license:
+
+- **The Spotify app package and its engine.** They are not part of this repository: you supply them,
+  and they remain Spotify's property.
+- **The font files in `app/src/main/res/font/spotify_mix_ui_*.otf`.** They are Spotify's typeface,
+  carried over from Spotui.
+- **Spotify's and Google's terms of service.** Using a third-party client with your account may break
+  them, so you use Spotifire at your own risk.
