@@ -2,6 +2,10 @@
 
 **Spotify and YouTube Music in one app, with the look of Spotify.**
 
+[![Download APK](https://img.shields.io/badge/Download-APK%20(v1.0.0)-0f9d63?logo=android&logoColor=white)](https://github.com/mohamedbessaa/spotifire/releases/download/v1.0.0/spotifire-v1.0.0.apk)
+[![Latest Release](https://img.shields.io/badge/Release-v1.0.0-blue)](https://github.com/mohamedbessaa/spotifire/releases/tag/v1.0.0)
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-0f9d63)](LICENSE)
+
 Spotifire is a personal Android music player. It puts your Spotify library, your YouTube Music
 library and the music files on your phone side by side, in an interface modeled on the Spotify app,
 with offline downloads and no ads.
