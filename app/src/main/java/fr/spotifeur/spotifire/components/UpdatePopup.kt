@@ -91,8 +91,14 @@ private fun Buttons(secondary: Pair<String, () -> Unit>, primary: Pair<String, (
     }
 }
 
-/** Release notes are Markdown; the popup shows them as plain text. */
-private fun plain(markdown: String): String = markdown.lines().joinToString("\n") { line ->
-    line.replace(Regex("^#{1,6}\\s*"), "").replace(Regex("^\\s*[-*]\\s+"), "• ").replace("**", "").replace("`", "")
-        .replace(Regex("\\[([^]]+)]\\([^)]+\\)"), "$1")
-}.trim()
+/** Release notes are Markdown; the popup shows them as plain text, wrapped lines joined back into their item. */
+internal fun plain(markdown: String): String {
+    val out = mutableListOf<String>()
+    for (raw in markdown.lines()) {
+        val continuation = raw.startsWith("  ") && !raw.trimStart().startsWith("-") && !raw.trimStart().startsWith("*") && out.isNotEmpty() && out.last().isNotBlank()
+        val line = raw.trim().replace(Regex("^#{1,6}\\s*"), "").replace(Regex("^[-*]\\s+"), "• ").replace("**", "").replace("`", "")
+            .replace(Regex("\\[([^]]+)]\\([^)]+\\)"), "$1")
+        if (continuation) out[out.size - 1] = out.last() + " " + line else out += line
+    }
+    return out.joinToString("\n").replace(Regex("\n{3,}"), "\n\n").trim()
+}

@@ -304,7 +304,13 @@ object Jam {
                 if (invites.containsKey(next.id)) return
                 invites[next.id] = invite to body
                 publishInvites()
-                SocialNotifier.jamInvite(context, Social.nameOf(message.from), invite.title)
+                // Relays deliver an invitation again after a restart: announce each one once.
+                val seen = context.getSharedPreferences("social", Context.MODE_PRIVATE)
+                val announced = seen.getStringSet("jam_announced", emptySet()).orEmpty()
+                if (next.id !in announced) {
+                    seen.edit().putStringSet("jam_announced", (announced + next.id).toList().takeLast(50).toSet()).apply()
+                    SocialNotifier.jamInvite(context, Social.nameOf(message.from), invite.title)
+                }
             }
             "jam-decline" -> Unit
         }
