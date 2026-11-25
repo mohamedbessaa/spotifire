@@ -56,6 +56,7 @@ import fr.spotifeur.spotifire.screens.SpotifireSearchScreen
 import fr.spotifeur.spotifire.screens.SpotifireWelcomeScreen
 import fr.spotifeur.spotifire.theme.SpotifyColors
 import java.net.URLDecoder
+import kotlinx.coroutines.launch
 
 /** Routes only Spotifire has. Every other route is Spotifeur's [Screen], so its screens still navigate correctly. */
 object SpotifireRoutes {
@@ -106,7 +107,6 @@ fun SpotifireMain(model: SpotifeurModel) {
     LaunchedEffect(Unit) { fr.spotifeur.update.AppUpdateChecker.clearCache(context); fr.spotifeur.update.AppUpdateChecker.check() }
     val update by fr.spotifeur.update.AppUpdateChecker.available.collectAsStateWithLifecycle()
     var updateDismissed by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
-    update?.takeIf { !updateDismissed }?.let { info -> fr.spotifeur.spotifire.components.UpdatePopup(info) { updateDismissed = true } }
     val sending by ui.sendRequests.collectAsStateWithLifecycle()
     sending?.let { (item, mode) ->
         fr.spotifeur.spotifire.friends.SendToFriendsSheet(model, item, mode,
@@ -144,6 +144,26 @@ fun SpotifireMain(model: SpotifeurModel) {
             exit = slideOutVertically(tween(280)) { it } + fadeOut(tween(200)),
         ) {
             SpotifireNowPlaying(model, navController) { ui.collapsePlayerSheet() }
+        }
+        // Software Update, over everything (BitChord's alert); Remind Me Later waits for the next launch.
+        update?.takeIf { !updateDismissed }?.let { info ->
+            val scope = androidx.compose.runtime.rememberCoroutineScope()
+            fr.spotifeur.spotifire.components.UpdatePopup(
+                version = info.version, notes = info.notes, hazeState = haze.takeIf { glass },
+                onDismiss = { updateDismissed = true },
+                onDownload = {
+                    if (info.apkUrl != null) scope.launch { fr.spotifeur.update.AppUpdateChecker.downloadApk(context.applicationContext) }
+                    else runCatching { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(info.releaseUrl))) }
+                },
+                onCancelDownload = { fr.spotifeur.update.AppUpdateChecker.cancelDownload() },
+                onInstall = {
+                    (fr.spotifeur.update.AppUpdateChecker.download.value as? fr.spotifeur.update.AppUpdateChecker.DownloadState.Ready)
+                        ?.let { fr.spotifeur.update.AppUpdateChecker.installApk(context, it.file) }
+                },
+                onOpenReleasePage = {
+                    runCatching { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(info.releaseUrl))) }
+                },
+            )
         }
     }
 }

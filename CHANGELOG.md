@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.1.2
+
+### Changed
+
+- The update popup is BitChord's: a frosted "Software Update" alert with the release notes rendered as
+  Markdown, Download Now / Remind Me Later, progress in place, then Install Now.
+
+### Fixed
+
+- A Jam invitation is announced once, not again each time the app restarts.
+
 ## v1.1.1
 
 ### Fixed
