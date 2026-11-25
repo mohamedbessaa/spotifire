@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.1.1
+
+### Fixed
+
+- Friends stays connected in the background: a card (and a row in Friends settings) lets Spotifire run without
+  battery limits, and the 15-minute check brings the connection back if Android stopped it. Requests and Jam
+  invitations no longer wait until the app is opened.
+- Jam invitations stay valid for 2 hours, so a phone that was offline still gets them; joining a Jam that already
+  ended leaves it after 20 seconds.
+- Listen together reads each phone's position from the audio itself and filters reporting noise; clocks come from
+  public time servers.
+
 ## v1.1.0
 
 ### Added

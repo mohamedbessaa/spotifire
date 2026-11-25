@@ -360,6 +360,7 @@ object Jam {
     private const val HEARTBEAT_MS = 5000L
     private const val HOST_GONE_MS = 10 * 60 * 1000L
     private const val NTP_EVERY_MS = 60_000L
-    private const val INVITE_FRESH_S = 90L
+    /** An invitation counts for 2 hours (a phone offline meanwhile still gets it); a Jam that ended is left after [NO_HOST_MS]. */
+    private const val INVITE_FRESH_S = 2 * 3600L
     private const val NO_HOST_MS = 20_000L
 }

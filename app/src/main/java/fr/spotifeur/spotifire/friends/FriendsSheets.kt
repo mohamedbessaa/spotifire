@@ -426,6 +426,9 @@ internal fun FriendsSettingsSheet(snap: SocialSnapshot, onDismiss: () -> Unit) {
                 instant = it; SocialMode.setInstant(context, it)
             }
         }
+        if (instant && !SocialMode.unrestricted(context)) ActionRow("Keep Friends connected in the background") {
+            runCatching { context.startActivity(SocialMode.unrestrictIntent(context)) }
+        }
         ActionRow("Recovery phrase") {
             val keyguard = context.getSystemService(KeyguardManager::class.java)
             @Suppress("DEPRECATION")

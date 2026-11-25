@@ -122,6 +122,7 @@ private fun FriendsHome(model: SpotifeurModel, snap: SocialSnapshot, bottomPaddi
         val blendInvites by fr.spotifeur.social.Blends.pendingInvites.collectAsStateWithLifecycle()
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 8.dp, bottom = bottomPadding.dp)) {
             item { JamCard(snap) }
+            item { KeepConnectedCard() }
             if (jamInvites.isNotEmpty() || playlistInvites.isNotEmpty() || blendInvites.isNotEmpty()) {
                 item { SectionTitle("Invitations") }
                 items(jamInvites, key = { "j" + it.session }) { JamInviteRow(it, snap) }
@@ -373,5 +374,31 @@ internal fun ago(seconds: Long): String {
         diff < 86_400 -> "${diff / 3600} h"
         diff < 7 * 86_400 -> "${diff / 86_400} d"
         else -> java.text.DateFormat.getDateInstance(java.text.DateFormat.SHORT).format(java.util.Date(seconds * 1000))
+    }
+}
+
+/**
+ * Asks once to let Friends run without battery limits, so Android does not stop the connection and invitations arrive
+ * right away; hidden once allowed or dismissed (it stays available in Friends settings).
+ */
+@Composable
+private fun KeepConnectedCard() {
+    val context = LocalContext.current
+    var shown by remember { mutableStateOf(SocialMode.instant(context) && !SocialMode.unrestricted(context) && !SocialMode.askedUnrestricted(context)) }
+    if (!shown) return
+    Column(Modifier.fillMaxWidth().padding(16.dp).clip(RoundedCornerShape(10.dp)).background(SpotifyColors.Highlight).padding(16.dp)) {
+        Text("Get invites right away", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        Text("Android may pause Friends in the background, and requests or Jam invitations then wait until you open the app. " +
+            "Allow Spotifire to run in the background to keep it connected.", color = SpotifyColors.TextSecondary, fontSize = 13.sp,
+            modifier = Modifier.padding(top = 4.dp))
+        Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            PillButton("Allow", filled = true) {
+                SocialMode.setAskedUnrestricted(context); shown = false
+                runCatching { context.startActivity(SocialMode.unrestrictIntent(context)) }
+            }
+            Spacer(Modifier.width(12.dp))
+            Text("Not now", color = SpotifyColors.TextSecondary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.quietClick { SocialMode.setAskedUnrestricted(context); shown = false }.padding(8.dp))
+        }
     }
 }

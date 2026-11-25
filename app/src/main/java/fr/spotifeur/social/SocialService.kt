@@ -76,6 +76,17 @@ object SocialMode {
     /** True once the user has set up Friends; before that the app never contacts a relay. */
     fun enabled(context: Context) = prefs(context).getBoolean("enabled", false)
     fun instant(context: Context) = prefs(context).getBoolean("instant", true)
+    /**
+     * Whether Android lets Friends run without battery limits. Without it, Android may stop the connection in the
+     * background and refuse to restart it until the app is opened, so invitations wait.
+     */
+    fun unrestricted(context: Context) =
+        context.getSystemService(android.os.PowerManager::class.java)?.isIgnoringBatteryOptimizations(context.packageName) == true
+    /** The system's own "allow to run in background" dialog for this app. */
+    fun unrestrictIntent(context: Context) = Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+        .setData(android.net.Uri.parse("package:${context.packageName}"))
+    fun askedUnrestricted(context: Context) = prefs(context).getBoolean("asked_unrestricted", false)
+    fun setAskedUnrestricted(context: Context) { prefs(context).edit().putBoolean("asked_unrestricted", true).apply() }
     fun setEnabled(context: Context, on: Boolean) { prefs(context).edit().putBoolean("enabled", on).apply(); SocialService.apply(context) }
     /** Friends see what's playing: off until the user turns it on. */
     fun shareListening(context: Context) = prefs(context).getBoolean("share_listening", false)
@@ -91,6 +102,11 @@ class SocialSync(context: Context, params: WorkerParameters) : CoroutineWorker(c
     override suspend fun doWork(): Result {
         if (!SocialMode.enabled(applicationContext)) return Result.success()
         Social.init(applicationContext)
+        // Instant mode: bring the connection back if Android stopped it (allowed when Friends runs without battery
+        // limits; otherwise Android refuses and the short sync below still collects what arrived).
+        if (SocialMode.instant(applicationContext)) runCatching {
+            ContextCompat.startForegroundService(applicationContext, Intent(applicationContext, SocialService::class.java))
+        }
         val wasRunning = Social.snapshot.value.connected
         Social.start()
         if (!wasRunning) {
