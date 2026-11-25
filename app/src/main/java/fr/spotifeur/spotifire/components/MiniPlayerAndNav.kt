@@ -5,6 +5,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.offset
+import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.outlined.People
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -30,6 +33,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
+import dev.chrisbanes.haze.hazeEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
@@ -105,6 +109,7 @@ val SpotifyTabs = listOf(
     SpotifyTab(fr.spotifeur.presentation.navigation.Screen.Home.route, "Home", Icons.Filled.Home, Icons.Outlined.Home),
     SpotifyTab(fr.spotifeur.presentation.navigation.Screen.Search.route, "Search", Icons.Filled.Search, Icons.Outlined.Search),
     SpotifyTab(fr.spotifeur.presentation.navigation.Screen.Library.route, "Your Library", Icons.Filled.LibraryMusic, Icons.Outlined.LibraryMusic),
+    SpotifyTab(fr.spotifeur.spotifire.SpotifireRoutes.FRIENDS, "Friends", Icons.Filled.People, Icons.Outlined.People),
 )
 
 /** Bottom area: mini player above the three tabs, on Spotify's black fade. */
@@ -115,14 +120,24 @@ fun SpotifyBottomArea(
     showTabs: Boolean,
     onTab: (String) -> Unit,
     onOpenPlayer: () -> Unit,
+    /** Frosted mode: the screen behind shows through a blur instead of the black bar. */
+    haze: dev.chrisbanes.haze.HazeState? = null,
 ) {
-    Column(
-        Modifier.fillMaxWidth().background(
-            remember { Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f), Color.Black)) }
-        ).navigationBarsPadding()
-    ) {
-        Spacer(Modifier.height(10.dp))
-        SpotifyMiniPlayer(ui, onOpenPlayer)
+    // The fade only runs above the mini player; under the tabs the bar is solid, as in Spotify, so a list never shows
+    // through the labels.
+    val frosted = haze != null
+    Column(Modifier.fillMaxWidth().then(if (haze != null) Modifier.hazeEffect(haze, style = dev.chrisbanes.haze.HazeStyle(
+        backgroundColor = Color.Black, tints = listOf(dev.chrisbanes.haze.HazeTint(Color.Black.copy(alpha = 0.55f))), blurRadius = 20.dp,
+    )) else Modifier)) {
+        if (frosted) Box(Modifier.fillMaxWidth().height(0.5.dp).background(Color.White.copy(alpha = 0.10f)))
+        Column(Modifier.fillMaxWidth().then(if (frosted) Modifier else Modifier.background(
+            remember { Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.92f))) }
+        ))) {
+            Spacer(Modifier.height(10.dp))
+            SpotifyMiniPlayer(ui, onOpenPlayer)
+        }
+        Column(Modifier.fillMaxWidth().then(if (frosted) Modifier else Modifier.background(Color.Black)).navigationBarsPadding()) {
+        val unread = fr.spotifeur.social.Social.snapshot.collectAsStateWithLifecycle().value.unread
         if (showTabs) Row(Modifier.fillMaxWidth().height(60.dp).padding(top = 4.dp)) {
             SpotifyTabs.forEach { tab ->
                 val selected = currentRoute == tab.route
@@ -131,12 +146,19 @@ fun SpotifyBottomArea(
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Spacer(Modifier.height(6.dp))
-                    Icon(if (selected) tab.selectedIcon else tab.icon, tab.label, tint = if (selected) Color.White else SpotifyColors.TextSecondary,
-                        modifier = Modifier.size(26.dp))
+                    Box {
+                        Icon(if (selected) tab.selectedIcon else tab.icon, tab.label, tint = if (selected) Color.White else SpotifyColors.TextSecondary,
+                            modifier = Modifier.size(26.dp))
+                        // New requests and music from friends.
+                        if (tab.route == fr.spotifeur.spotifire.SpotifireRoutes.FRIENDS && unread > 0) Box(
+                            Modifier.align(Alignment.TopEnd).offset(x = 3.dp, y = (-2).dp).size(9.dp)
+                                .background(SpotifyColors.Green, androidx.compose.foundation.shape.CircleShape))
+                    }
                     Text(tab.label, color = if (selected) Color.White else SpotifyColors.TextSecondary, fontSize = 10.sp,
                         fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal, modifier = Modifier.padding(top = 2.dp))
                 }
             }
         } else Spacer(Modifier.height(8.dp))
+        }
     }
 }

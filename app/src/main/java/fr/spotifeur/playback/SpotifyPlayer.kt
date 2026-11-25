@@ -34,11 +34,15 @@ data class Playback(
     val audioFormat: String = "",
     /** Tracks the user queued, waiting right after the current one. */
     val queuedCount: Int = 0,
+    /** Smart Shuffle: recommendations are mixed into the shuffled queue. */
+    val smartShuffle: Boolean = false,
 ) { val track: Music? get() = queue.getOrNull(index) }
 
 /** Outlives the activity, like the playback service whose queue it describes. */
 private object ShuffleMemory {
     var enabled = false
+    /** Smart Shuffle, on top of [enabled]. Lasts for the session, like Spotify's. */
+    var smart = false
     private var loaded = false
     /** Restores the last choice once, when the setting asks for it. */
     fun load(context: Context) {
@@ -191,7 +195,54 @@ class SpotifyPlayer(context: Context, scope: CoroutineScope) : AutoCloseable {
         player.seekTo(positionMs.coerceAtLeast(0).toLong())
         if (failed) player.prepare()
     } }
-    fun shuffle() { controller?.let { player ->
+    /**
+     * Finds recommendations for Smart Shuffle: the radio of the playing track, set by the model (null without a
+     * Spotify account, and Smart Shuffle is then skipped).
+     */
+    var recommend: (suspend (seed: Music) -> List<Music>)? = null
+    private val scopeRef = scope
+
+    /** Off, shuffle, Smart Shuffle, off: Spotify's cycle. */
+    fun shuffle() {
+        val canSmart = recommend != null
+        when {
+            ShuffleMemory.enabled && !ShuffleMemory.smart && canSmart -> { ShuffleMemory.smart = true; mixRecommendations(); return }
+            ShuffleMemory.enabled && ShuffleMemory.smart -> { ShuffleMemory.smart = false; removeRecommendations() }
+        }
+        toggleShuffle()
+    }
+
+    private fun mixRecommendations() {
+        val player = controller ?: return
+        val seed = music(player.currentMediaItem ?: return)
+        controller?.let(::update)
+        scopeRef.launch {
+            val found = runCatching { recommend?.invoke(seed) }.getOrNull().orEmpty()
+            val player2 = controller ?: return@launch
+            if (!ShuffleMemory.smart) return@launch
+            val queued = userQueue(player2)
+            val window = (0 until player2.mediaItemCount).map { music(player2.getMediaItemAt(it)) }
+            val local = player2.currentMediaItemIndex
+            val later = (window.drop(local + 1 + queued.size) + after).filterNot(Music::isRecommendation)
+            val present = (before + window + after).map { it.id }.toSet()
+            val picks = found.filter { it.id !in present && it.kind == fr.spotifeur.data.MusicKind.Track }
+                .distinctBy { it.id }.take(later.size / SMART_EVERY + 5).map { it.copy(note = SMART_NOTE) }
+            replaceAroundCurrent(player2, before + window.take(local), interleaveSmart(later, picks), queued)
+            queueChanged = true
+            update(player2)
+        }
+    }
+
+    private fun removeRecommendations() { controller?.let { player ->
+        val queued = userQueue(player)
+        val window = (0 until player.mediaItemCount).map { music(player.getMediaItemAt(it)) }
+        val local = player.currentMediaItemIndex
+        replaceAroundCurrent(player, before + window.take(local), (window.drop(local + 1 + queued.size) + after).filterNot(Music::isRecommendation), queued)
+        ShuffleMemory.original = ShuffleMemory.original?.filterNot(Music::isRecommendation)
+        queueChanged = true
+    } }
+
+    private fun toggleShuffle() { controller?.let { player ->
         val queued = userQueue(player)
         val window = (0 until player.mediaItemCount).map { music(player.getMediaItemAt(it)) }
         val local = player.currentMediaItemIndex
@@ -236,6 +287,11 @@ class SpotifyPlayer(context: Context, scope: CoroutineScope) : AutoCloseable {
         controller?.stop(); controller?.clearMediaItems(); mutableState.value = Playback(shuffle = ShuffleMemory.enabled)
     }
     fun pause() { controller?.pause() }
+    // Listen together needs the exact position (the state is refreshed every 300 ms) and small speed nudges.
+    fun exactPositionMs(): Long? = controller?.currentPosition
+    fun isPlayingNow(): Boolean = controller?.isPlaying == true
+    fun resume() { controller?.play() }
+    fun setSpeed(rate: Float) { controller?.let { if (it.playbackParameters.speed != rate) it.setPlaybackSpeed(rate) } }
     fun setVolume(volume: Float) { controller?.volume = volume }
     fun volume(): Float = controller?.volume ?: 1f
     fun seekToItem(index: Int) { controller?.let { player ->
@@ -287,7 +343,7 @@ class SpotifyPlayer(context: Context, scope: CoroutineScope) : AutoCloseable {
         mutableState.value = Playback(queue, index, player.isPlaying, player.playbackState == Player.STATE_BUFFERING,
             player.currentPosition.coerceIn(0, Int.MAX_VALUE.toLong()).toInt(), duration.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
             ShuffleMemory.enabled, player.repeatMode, error, player.hasNextMediaItem() || after.isNotEmpty(), player.playWhenReady, currentAudioFormat(player),
-            userQueue(player).size)
+            userQueue(player).size, ShuffleMemory.enabled && ShuffleMemory.smart)
     }
     private companion object {
         const val WINDOW_BEHIND = 20
@@ -349,8 +405,25 @@ private fun mediaItem(track: Music, queued: Boolean = false): MediaItem {
             .setArtworkUri(fr.spotifeur.data.largestSpotifyImage(track.imageUrl)?.let(Uri::parse)).setIsPlayable(true).setIsBrowsable(false)
             .setExtras(Bundle().apply {
                 putInt("duration", track.durationMs); putInt("artwork", track.artwork)
-                putString("album", track.album); putString("mediaUri", track.mediaUri); putString("quality", track.quality)
+                putString("album", track.album); putString("mediaUri", track.mediaUri); putString("quality", track.quality); putString("isrc", track.isrc)
+                if (track.isRecommendation) putString("note", SMART_NOTE)
                 if (queued) putBoolean(QUEUED, true)
             }).build()).build()
 }
 private fun music(item: MediaItem) = musicOf(item)
+
+/** Marks a track Smart Shuffle added; the queue shows it with a sparkle. */
+const val SMART_NOTE = "smart-shuffle"
+private const val SMART_EVERY = 3
+val Music.isRecommendation: Boolean get() = note == SMART_NOTE
+
+/** One recommendation after every [SMART_EVERY] tracks of the context, as Spotify's Smart Shuffle spaces them. */
+internal fun interleaveSmart(context: List<Music>, picks: List<Music>): List<Music> {
+    val out = ArrayList<Music>(context.size + picks.size)
+    var next = 0
+    context.forEachIndexed { i, track ->
+        out += track
+        if ((i + 1) % SMART_EVERY == 0 && next < picks.size) out += picks[next++]
+    }
+    return out
+}

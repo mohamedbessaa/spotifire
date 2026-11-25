@@ -147,7 +147,7 @@ fun SpotifireDownloadsScreen(model: SpotifeurModel, navController: NavHostContro
                     Pill("Normal", current == AudioQuality.NORMAL) { ui.updateSettings { it.copy(downloadQuality = AudioQuality.NORMAL.key) } }
                     Pill("Very high", current == AudioQuality.VERY_HIGH) { ui.updateSettings { it.copy(downloadQuality = AudioQuality.VERY_HIGH.key) } }
                 }
-                Text("Normal is AAC 128 kbit/s. Very high is up to 256 kbit/s, as your Spotify plan allows. It applies to new downloads.",
+                Text("Very high keeps the best copy of each song, up to lossless. Normal keeps 128 kbit/s where the source allows. It applies to new downloads.",
                     color = SpotifyColors.TextMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
                 Row(Modifier.fillMaxWidth().padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {

@@ -1,5 +1,10 @@
 package fr.spotifeur.spotifire.screens
 
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.offset
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Headphones
+import androidx.compose.material.icons.filled.Group
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -75,6 +80,7 @@ import fr.spotifeur.presentation.navigation.Screen
 import fr.spotifeur.presentation.navigation.navigateSafely
 import fr.spotifeur.presentation.navigation.openMusic
 import fr.spotifeur.spotifire.components.Cover
+import fr.spotifeur.spotifire.components.quietClick
 import fr.spotifeur.spotifire.components.GreenPlayButton
 import fr.spotifeur.spotifire.components.MediaCard
 import fr.spotifeur.spotifire.components.PlaylistSourceBadge
@@ -138,6 +144,15 @@ fun SpotifirePlaylistScreen(model: SpotifeurModel, navController: NavHostControl
         }
     }
     val editable = isLocalList || ownsYouTube || (isOwned && !isLiked)
+    // Friends: a playlist edited together, or a Blend.
+    val sharedViews by fr.spotifeur.social.SharedPlaylists.views.collectAsStateWithLifecycle()
+    val blendViews by fr.spotifeur.social.Blends.views.collectAsStateWithLifecycle()
+    val social by fr.spotifeur.social.Social.snapshot.collectAsStateWithLifecycle()
+    val shared = sharedViews.firstOrNull { it.localId == playlistId }
+    val blend = blendViews.firstOrNull { it.localId == playlistId }
+    val addedBy = remember(shared) { shared?.entries?.associate { it.track.optString("id") to it.addedBy }.orEmpty() }
+    var managing by remember { mutableStateOf(false) }
+    if (managing && shared != null) fr.spotifeur.spotifire.friends.SharedMembersSheet(shared) { managing = false }
     val scope = rememberCoroutineScope()
     var removing by remember { mutableStateOf(false) }
     val removeAt: ((Int) -> Unit)? = when {
@@ -210,7 +225,21 @@ fun SpotifirePlaylistScreen(model: SpotifeurModel, navController: NavHostControl
             Row(verticalAlignment = Alignment.CenterVertically) {
                 PlaylistSourceBadge(current)
                 Spacer(Modifier.width(6.dp))
-                Text(subtitle, color = SpotifyColors.TextSecondary, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(when {
+                    blend != null -> "Blend • made for ${fr.spotifeur.social.Social.nameOf(blend.friend)} and you, new every day"
+                    shared != null -> "Edited together • ${shared.members.size} people"
+                    else -> subtitle
+                }, color = SpotifyColors.TextSecondary, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+            if (shared != null) Row(Modifier.padding(top = 8.dp).quietClick { managing = true }, verticalAlignment = Alignment.CenterVertically) {
+                shared.members.take(5).forEachIndexed { i, key ->
+                    fr.spotifeur.spotifire.friends.FriendAvatar(key, if (key == social.me) social.profile.name else fr.spotifeur.social.Social.nameOf(key), 24.dp,
+                        Modifier.offset(x = (-6 * i).dp).border(1.5.dp, SpotifyColors.Background, androidx.compose.foundation.shape.CircleShape),
+                        photo = if (key == social.me) social.profile.photo else social.photos[key])
+                }
+                Text(shared.members.filter { it != social.me }.joinToString(", ") { fr.spotifeur.social.Social.nameOf(it) }.let { "You, $it" },
+                    color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(start = 2.dp))
             }
         },
         actions = {
@@ -225,13 +254,21 @@ fun SpotifirePlaylistScreen(model: SpotifeurModel, navController: NavHostControl
             Box {
                 IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "More", tint = SpotifyColors.TextSecondary) }
                 DropdownMenu(menu, { menu = false }, containerColor = SpotifyColors.Elevated) {
-                    if (editable && online || isLocalList) DropdownMenuItem(text = { Text("Add songs") }, leadingIcon = { Icon(Icons.Filled.Add, null) },
+                    // A Blend is rebuilt every day from both tastes: nothing to add or rename by hand.
+                    if ((editable && online || isLocalList) && blend == null) DropdownMenuItem(text = { Text("Add songs") }, leadingIcon = { Icon(Icons.Filled.Add, null) },
                         onClick = { menu = false; adding = true })
-                    if (editable) DropdownMenuItem(text = { Text("Edit details") }, leadingIcon = { Icon(Icons.Filled.Edit, null) },
+                    if (editable && blend == null) DropdownMenuItem(text = { Text("Edit details") }, leadingIcon = { Icon(Icons.Filled.Edit, null) },
                         onClick = { menu = false; renaming = true })
                     if (!isLiked && model.conversionTargets(current).isNotEmpty()) DropdownMenuItem(
                         text = { Text(if (isYouTubeList) "Convert to Spotify…" else if (isLocalList) "Convert to…" else "Convert to YouTube Music…") },
                         leadingIcon = { Icon(Icons.Filled.SwapHoriz, null) }, onClick = { menu = false; converting = true })
+                    if (isLocalList && blend == null) DropdownMenuItem(text = { Text(if (shared != null) "Edit together…" else "Edit together with friends") },
+                        leadingIcon = { Icon(Icons.Filled.Group, null) },
+                        onClick = { menu = false; if (shared != null) managing = true else ui.pickFriends(current, fr.spotifeur.presentation.viewmodel.PlayerViewModel.FriendPick.EditTogether) })
+                    if (songs.isNotEmpty()) DropdownMenuItem(text = { Text("Listen together") }, leadingIcon = { Icon(Icons.Filled.Headphones, null) },
+                        onClick = { menu = false; ui.pickFriends(current, fr.spotifeur.presentation.viewmodel.PlayerViewModel.FriendPick.ListenTogether) })
+                    if (blend != null) DropdownMenuItem(text = { Text("Stop the Blend") }, leadingIcon = { Icon(Icons.Filled.Close, null) },
+                        onClick = { menu = false; fr.spotifeur.social.Social.launch { fr.spotifeur.social.Blends.stop(context, blend.id) } })
                     DropdownMenuItem(text = { Text("More options") }, leadingIcon = { Icon(Icons.Filled.MoreVert, null) },
                         onClick = { menu = false; options = current })
                     if (isLocalList || isOwned || ownsYouTube) DropdownMenuItem(text = { Text("Delete playlist", color = SpotifyColors.Error) },
@@ -264,6 +301,10 @@ fun SpotifirePlaylistScreen(model: SpotifeurModel, navController: NavHostControl
                 available = remember(song.id, online, trackDownloads[song.id]?.isComplete) { fr.spotifeur.spotifire.components.playableNow(context, song.id, online) },
                 onClick = { ui.showAndPlaySong(song, songs, current.title, index) },
                 onMore = { selected = song; selectedIndex = index },
+                addedBy = addedBy[song.id]?.let { key -> {
+                    fr.spotifeur.spotifire.friends.FriendAvatar(key, if (key == social.me) social.profile.name else fr.spotifeur.social.Social.nameOf(key), 15.dp,
+                        photo = if (key == social.me) social.profile.photo else social.photos[key])
+                } },
             )
         }
         if (detail?.loading == true && songs.isNotEmpty()) item { SpotifyLoader() }

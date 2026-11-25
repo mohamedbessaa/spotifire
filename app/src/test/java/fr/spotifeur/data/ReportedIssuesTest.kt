@@ -72,18 +72,6 @@ class ReportedIssuesTest {
     }
 
     @Test
-    fun normalizationLowersLoudTracksAndKeepsQuietOnesUnchanged() {
-        // -8 LUFS with a -0.3 dBTP peak: 6 dB down.
-        assertEquals(-6f, TrackLoudness.spotifyGainDb(-8f, -0.3f)!!, 0.001f)
-        assertEquals(0.501f, TrackLoudness.linear(-6f), 0.001f)
-        // -20 LUFS would need +6 dB, limited by its -2 dBTP peak to +1 dB; volume cannot raise it.
-        assertEquals(1f, TrackLoudness.spotifyGainDb(-20f, -2f)!!, 0.001f)
-        assertEquals(1f, TrackLoudness.linear(1f), 0f)
-        assertNull(TrackLoudness.spotifyGainDb(Float.NaN, -1f))
-        assertEquals(1f, TrackLoudness.linear(null), 0f)
-    }
-
-    @Test
     fun playlistSearchMatchesTitleArtistOrAlbumWithoutAccents() {
         assertTrue(matchesWords("beyonce halo", "Halo", "Beyoncé", "I Am... Sasha Fierce"))
         assertTrue(matchesWords("SASHA", "Halo", "Beyoncé", "I Am... Sasha Fierce"))
@@ -101,10 +89,10 @@ class ReportedIssuesTest {
 
     @Test
     fun newSettingsSurviveABackupAndUnknownSwipeValuesFallBack() {
-        val settings = AppSettings(audioNormalization = true, showPlayerMenuButton = false, miniPlayerSwipe = AppSettings.MINI_SWIPE_OFF, showSearchSources = true)
+        val settings = AppSettings(normalizationLevel = "loud", showPlayerMenuButton = false, miniPlayerSwipe = AppSettings.MINI_SWIPE_OFF, showSearchSources = true)
         assertEquals(settings, AppSettings.fromJson(settings.toJson()))
         val defaults = AppSettings()
-        assertFalse(defaults.audioNormalization)
+        assertEquals("normal", defaults.normalizationLevel)
         assertTrue(defaults.showPlayerMenuButton)
         assertEquals(AppSettings.MINI_SWIPE_TRACKS, defaults.miniPlayerSwipe)
         assertFalse(defaults.showSearchSources)

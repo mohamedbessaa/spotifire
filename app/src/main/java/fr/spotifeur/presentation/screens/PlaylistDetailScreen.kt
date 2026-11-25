@@ -27,7 +27,6 @@ import androidx.compose.material.icons.rounded.SwapHoriz
 import fr.spotifeur.presentation.navigation.navigateSafely
 import fr.spotifeur.data.preferences.DetailAction
 import fr.spotifeur.data.preferences.DetailPage
-import fr.spotifeur.presentation.utils.shareMusic
 import fr.spotifeur.presentation.utils.spotifyShareUrl
 import androidx.compose.material.icons.rounded.TableChart
 import androidx.compose.material3.AlertDialog
@@ -220,7 +219,6 @@ fun PlaylistDetailScreen(model: SpotifeurModel, navController: NavHostController
     ) {
         item(key = "playlist_filter") { PlaylistFilterField(filter, enabled = !reordering) { filter = it } }
         item(key = "playlist_actions") {
-            val shareContext = LocalContext.current
             val editable = isLocalList || isOwned || ownsYouTube
             val actions = buildList {
                 add(downloadAction(ui, current))
@@ -240,8 +238,7 @@ fun PlaylistDetailScreen(model: SpotifeurModel, navController: NavHostController
                     enabled = isLocalList || online))
                 if (!isLocalList && !isYouTubeList && discovery.spotifyEnabled) add(ActionSpec(DetailAction.RADIO, Icons.Rounded.Radio, stringResource(R.string.radio_related),
                     { ui.startRadio(current) { navController.openMusic(ui, it) } }))
-                if (current.spotifyShareUrl() != null) add(ActionSpec(DetailAction.SHARE, Icons.Rounded.Share, stringResource(R.string.detail_share),
-                    { shareContext.shareMusic(current) }))
+                add(ActionSpec(DetailAction.SHARE, Icons.Rounded.Share, stringResource(R.string.detail_share), { ui.share(current) }))
                 add(ActionSpec(DetailAction.EXPORT, Icons.Rounded.TableChart, stringResource(R.string.playlist_export_csv), { exportCsv(current) },
                     enabled = content != null))
                 if (playlistKind != null) add(ActionSpec(DetailAction.CONVERT, Icons.Rounded.SwapHoriz, stringResource(R.string.convert_to),

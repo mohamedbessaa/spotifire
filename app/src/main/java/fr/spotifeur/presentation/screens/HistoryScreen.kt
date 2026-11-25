@@ -132,7 +132,8 @@ internal fun HistoryScreen(model: SpotifeurModel, navController: NavHostControll
                             modifier = Modifier.fillMaxWidth().padding(start = 4.dp, top = if (index == 0) 4.dp else 16.dp, bottom = 4.dp),
                         )
                         val song = songs[index]
-                        val current = stable.currentSong?.id == song.id
+                        // Only the latest play of the current song is marked, not every time it was played.
+                        val current = stable.currentSong?.id == song.id && songs.indexOfFirst { it.id == song.id } == index
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 Instant.ofEpochMilli(entry.playedAt).atZone(zone).format(timeFormat),

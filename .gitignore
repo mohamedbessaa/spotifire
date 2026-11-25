@@ -16,3 +16,6 @@ local.properties
 
 # Release output
 dist/
+
+# Release signing: the key and its password stay on this PC.
+keystore.properties

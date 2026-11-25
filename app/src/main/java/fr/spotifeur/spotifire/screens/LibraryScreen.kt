@@ -144,8 +144,7 @@ fun SpotifireLibraryScreen(model: SpotifeurModel, navController: NavHostControll
 
     Column(Modifier.fillMaxSize().background(SpotifyColors.Background).statusBarsPadding()) {
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(32.dp).clip(CircleShape).background(Color(0xFFE8622C)).quietClick { navController.navigateSafely(SpotifireRoutes.ACCOUNTS) },
-                contentAlignment = Alignment.Center) { Text("S", color = Color.Black, fontWeight = FontWeight.Bold) }
+            fr.spotifeur.spotifire.components.ProfileAvatar(model, 32.dp) { navController.navigateSafely(SpotifireRoutes.ACCOUNTS) }
             Spacer(Modifier.width(12.dp))
             if (searching) {
                 Row(Modifier.weight(1f).clip(androidx.compose.foundation.shape.RoundedCornerShape(4.dp)).background(SpotifyColors.Highlight)

@@ -35,7 +35,17 @@ class SpotifeurPlaybackService : MediaSessionService() {
     private var behavior: PlaybackBehavior? = null
     private var preloader: QueuePreloader? = null
     private var recovery: PlaybackRecovery? = null
-    private var normalizingSink: NormalizingAudioSink? = null
+    /** Each player levels its own track: during a crossfade both sides keep their own gain. */
+    private val loudness = HashMap<ExoPlayer, LoudnessProcessor>()
+    /** Each player's tone/headphone EQ and dimensional effect, ahead of its loudness stage. */
+    private val sound = HashMap<ExoPlayer, Pair<fr.spotifeur.playback.dsp.EqProcessor, fr.spotifeur.playback.dsp.SpatialProcessor>>()
+    private var pendingSound: Pair<fr.spotifeur.playback.dsp.EqProcessor, fr.spotifeur.playback.dsp.SpatialProcessor>? = null
+    private val meters = HashMap<ExoPlayer, fr.spotifeur.playback.dsp.EnergyMeter>()
+    private var pendingMeter: fr.spotifeur.playback.dsp.EnergyMeter? = null
+    private var crossfade: Crossfade? = null
+    private var active: ExoPlayer? = null
+    private val attributes = AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build()
+    private var describedForLoudness: String? = null
     private val effectsScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main.immediate + kotlinx.coroutines.SupervisorJob())
     override fun onCreate() {
         super.onCreate()
@@ -49,7 +59,7 @@ class SpotifeurPlaybackService : MediaSessionService() {
             }
             .setMultiSession(true).setPlayClearSamplesWithoutKeys(true)
             .build(HttpMediaDrmCallback("https://spclient.wg.spotify.com/widevine-license/v1/audio/license", false, http))
-        val renderers = object : DefaultRenderersFactory(this) {
+        fun renderers(onLoudness: (LoudnessProcessor) -> Unit) = object : DefaultRenderersFactory(this) {
             override fun getCodecAdapterFactory(): androidx.media3.exoplayer.mediacodec.MediaCodecAdapter.Factory {
                 val factory = super.getCodecAdapterFactory()
                 if (audio != null) return audio.codecFactory
@@ -65,11 +75,19 @@ class SpotifeurPlaybackService : MediaSessionService() {
                     }
                 }
             }
-            override fun buildAudioSink(context: android.content.Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): AudioSink =
-                NormalizingAudioSink(DefaultAudioSink.Builder(context).setEnableFloatOutput(enableFloatOutput)
-                    .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
-                    .apply { if (BuildConfig.BUILD_TYPE == "debug") setAudioProcessors(arrayOf(SignalProbe())) }.build())
-                    .also { normalizingSink = it }
+            override fun buildAudioSink(context: android.content.Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): AudioSink {
+                // EQ, then the dimensional effect, then loudness with its limiter last, so nothing clips; the debug
+                // probe measures what is heard.
+                val eq = fr.spotifeur.playback.dsp.EqProcessor()
+                val spatial = fr.spotifeur.playback.dsp.SpatialProcessor()
+                pendingSound = eq to spatial
+                val processor = LoudnessProcessor().also(onLoudness)
+                val meter = fr.spotifeur.playback.dsp.EnergyMeter().also { pendingMeter = it }
+                val effects = arrayOf<androidx.media3.common.audio.AudioProcessor>(eq, spatial, processor, meter)
+                val chain = if (BuildConfig.BUILD_TYPE == "debug") effects + SignalProbe() else effects
+                return DefaultAudioSink.Builder(context).setEnableFloatOutput(enableFloatOutput)
+                    .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams).setAudioProcessors(chain).build()
+            }
         }
         // Playlists have no length and stay out of both caches: the data source keeps those itself.
         val cacheFlags = CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR or CacheDataSource.FLAG_IGNORE_CACHE_FOR_UNSET_LENGTH_REQUESTS
@@ -77,7 +95,11 @@ class SpotifeurPlaybackService : MediaSessionService() {
             .setUpstreamDataSourceFactory(http).setFlags(cacheFlags)
         // YouTube Music requests have no known length: they use their own chain, keyed by track.
         val youtube = youTubeCacheChain(this)
-        val player = ExoPlayer.Builder(this, renderers)
+        // Both players share one audio session, so the system equalizer covers the two sides of a crossfade.
+        val sessionId = androidx.media3.common.util.Util.generateAudioSessionIdV21(this)
+        fun buildPlayer(): ExoPlayer {
+        var processor: LoudnessProcessor? = null
+        val built = ExoPlayer.Builder(this, renderers { processor = it })
             .setMediaSourceFactory(SpotifeurMediaSourceFactory(HlsMediaSource.Factory(
                 CacheDataSource.Factory().setCache(DownloadCenter.cache(this)).setCacheKeyFactory(AudioCache.keys)
                     .setUpstreamDataSourceFactory(recentAudio)
@@ -88,25 +110,67 @@ class SpotifeurPlaybackService : MediaSessionService() {
                 else { setDrmSessionManagerProvider { drm }; if (BuildConfig.DEBUG) setExtractorFactory(ExtractorProbe()) }
             }, ProgressiveMediaSource.Factory(DefaultDataSource.Factory(this)),
                 ProgressiveMediaSource.Factory(youtube.kept).setLoadErrorHandlingPolicy(ResilientLoadPolicy())))
-            .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), true)
+            .setAudioAttributes(attributes, false)
             .setHandleAudioBecomingNoisy(true).setWakeMode(C.WAKE_MODE_NETWORK).build()
-        player.preloadConfiguration = ExoPlayer.PreloadConfiguration(NEXT_TRACK_PRELOAD_US)
-        player.addAnalyticsListener(PlaybackDiagnostics)
-        preloader = QueuePreloader(this, player, http, recentAudio, effectsScope, audio, youtube.recent).also { it.start() }
-        recovery = PlaybackRecovery(this, player, effectsScope, audio).also { it.start() }
-        behavior = PlaybackBehavior(this, player).also { it.start() }
-        EqualizerRuntime.start(this, effectsScope)
-        EqualizerRuntime.setAudioSessionId(player.audioSessionId)
-        player.addListener(object : androidx.media3.common.Player.Listener {
-            override fun onAudioSessionIdChanged(audioSessionId: Int) = EqualizerRuntime.setAudioSessionId(audioSessionId)
-            // The first track's loudness is only known once its manifest is read, hence READY too.
-            override fun onMediaItemTransition(mediaItem: androidx.media3.common.MediaItem?, reason: Int) = updateNormalization(player)
-            override fun onPlaybackStateChanged(playbackState: Int) = updateNormalization(player)
-        })
-        effectsScope.launch {
-            SettingsStore.get(this@SpotifeurPlaybackService).settings.map { it.audioNormalization }.distinctUntilChanged()
-                .collect { updateNormalization(player) }
+        built.setAudioSessionId(sessionId)
+        built.preloadConfiguration = ExoPlayer.PreloadConfiguration(NEXT_TRACK_PRELOAD_US)
+        built.addAnalyticsListener(PlaybackDiagnostics)
+        loudness[built] = checkNotNull(processor) { "The audio sink is built with the player." }
+        sound[built] = checkNotNull(pendingSound)
+        meters[built] = checkNotNull(pendingMeter)
+        return built
         }
+        val player = buildPlayer()
+        val standby = buildPlayer()
+        EqualizerRuntime.start(this, effectsScope)
+        EqualizerRuntime.setAudioSessionId(sessionId)
+        val helpers = object {
+            fun attach(target: ExoPlayer) {
+                active = target
+                renderingPlayer = target
+                target.setAudioAttributes(attributes, true)
+                target.addListener(playerListener)
+                preloader = QueuePreloader(this@SpotifeurPlaybackService, target, http, recentAudio, effectsScope, audio, youtube.recent).also { it.start() }
+                recovery = PlaybackRecovery(this@SpotifeurPlaybackService, target, effectsScope, audio).also { it.start() }
+                behavior = PlaybackBehavior(this@SpotifeurPlaybackService, target).also { it.start() }
+                updateNormalization(target)
+            }
+            fun detach(target: ExoPlayer) {
+                target.removeListener(playerListener)
+                // The outgoing side of a crossfade fades out by volume, never by losing audio focus.
+                target.setAudioAttributes(attributes, false)
+                behavior?.close(); behavior = null
+                preloader?.close(); preloader = null
+                recovery?.close(); recovery = null
+            }
+        }
+        helpers.attach(player)
+        crossfade = Crossfade(effectsScope, player, standby,
+            fadeMs = { SettingsStore.get(this).settings.value.crossfadeSeconds * 1000L },
+            automix = { SettingsStore.get(this).settings.value.automix },
+            outroOf = { p -> meters[p]?.outro == true },
+            // Two encrypted engine decoders at once are not proven yet: engine tracks change gaplessly.
+            canOverlap = { outgoing, incoming -> outgoing.localConfiguration?.uri?.scheme != "spotify" && incoming.localConfiguration?.uri?.scheme != "spotify" },
+            onHandoff = { outgoing, incoming ->
+                helpers.detach(outgoing)
+                helpers.attach(incoming)
+                mediaSession?.player = incoming
+            }).also { it.start() }
+        effectsScope.launch {
+            SettingsStore.get(this@SpotifeurPlaybackService).settings.map { it.normalizationLevel }.distinctUntilChanged()
+                .collect { active?.let(::updateNormalization) }
+        }
+        // Sound settings reach both players at once, so a crossfade never blends two different tones.
+        effectsScope.launch {
+            SettingsStore.get(this@SpotifeurPlaybackService).settings
+                .map { listOf(it.toneBass, it.toneTreble, it.toneDynamic, it.headphoneEq, it.spatialAudio) }.distinctUntilChanged()
+                .collect { applySound() }
+        }
+        val audioManager = getSystemService(android.media.AudioManager::class.java)
+        audioManager.registerAudioDeviceCallback(object : android.media.AudioDeviceCallback() {
+            override fun onAudioDevicesAdded(added: Array<out android.media.AudioDeviceInfo>) = refreshHeadphones()
+            override fun onAudioDevicesRemoved(removed: Array<out android.media.AudioDeviceInfo>) = refreshHeadphones()
+        }, android.os.Handler(mainLooper))
         val intent = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         mediaSession = MediaSession.Builder(this, player).setSessionActivity(intent)
@@ -116,14 +180,49 @@ class SpotifeurPlaybackService : MediaSessionService() {
                     else MediaSession.ConnectionResult.reject()
             }).build()
     }
-    private fun updateNormalization(player: androidx.media3.common.Player) {
-        val sink = normalizingSink ?: return
-        val enabled = SettingsStore.get(this).settings.value.audioNormalization
-        val id = player.currentMediaItem?.mediaId
-        val gain = if (!enabled || id == null) null else TrackLoudness.gainDb(this, id)
-        val factor = if (gain == null) 1f else TrackLoudness.linear(gain)
-        if (factor != sink.factor) android.util.Log.i("SpotifeurAudio", "normalization enabled=$enabled gain=${gain?.let { "%.1f".format(it) }}dB volume=${"%.2f".format(factor)}")
-        sink.factor = factor
+    private fun refreshHeadphones() {
+        effectsScope.launch { fr.spotifeur.playback.dsp.SoundRuntime.refreshHeadphones(this@SpotifeurPlaybackService); applySound() }
+    }
+
+    private fun applySound() {
+        val settings = SettingsStore.get(this).settings.value
+        val curve = fr.spotifeur.playback.dsp.SoundRuntime.curve(settings)
+        val amount = fr.spotifeur.playback.dsp.SoundRuntime.spatialAmount(settings)
+        sound.values.forEach { (eq, spatial) -> eq.curve = curve; spatial.amount = amount }
+    }
+
+    private val playerListener = object : androidx.media3.common.Player.Listener {
+        // The first track's loudness is only known once its manifest is read, hence READY too.
+        override fun onMediaItemTransition(mediaItem: androidx.media3.common.MediaItem?, reason: Int) { active?.let(::updateNormalization); announce() }
+        override fun onPlaybackStateChanged(playbackState: Int) { active?.let(::updateNormalization) }
+        override fun onIsPlayingChanged(isPlaying: Boolean) { announce() }
+    }
+
+    /** Friends' "Listening now", when the user shares it (see Social.nowPlaying). */
+    private fun announce() {
+        val player = active ?: return
+        val item = player.currentMediaItem
+        val meta = item?.mediaMetadata
+        fr.spotifeur.social.Social.nowPlaying(item?.mediaId, meta?.title?.toString().orEmpty(), meta?.artist?.toString().orEmpty(),
+            meta?.artworkUri?.toString(), player.isPlaying)
+    }
+
+    private fun updateNormalization(player: ExoPlayer) {
+        val processor = loudness[player] ?: return
+        val level = SettingsStore.get(this).settings.value.normalizationLevel
+        val item = player.currentMediaItem
+        val gain = if (item == null) null else TrackLoudness.gainDb(this, item.mediaId, level)
+        // A Spotify track whose loudness is not known yet: record it once in the index, then look again.
+        if (gain == null && item != null && level != TrackLoudness.OFF && item.mediaId.startsWith("spotify:track:") && describedForLoudness != item.mediaId) {
+            describedForLoudness = item.mediaId
+            effectsScope.launch {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { fr.spotifeur.data.AudioIndex.get(this@SpotifeurPlaybackService).describe(musicOf(item), played = false) }
+                if (player.currentMediaItem?.mediaId == item.mediaId) updateNormalization(player)
+            }
+        }
+        val linear = if (gain == null) 1f else Math.pow(10.0, gain / 20.0).toFloat()
+        if (linear != processor.gain) android.util.Log.i("SpotifeurAudio", "loudness level=$level gain=${gain?.let { "%.1f".format(it) }}dB")
+        processor.gain = linear
     }
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession
     override fun onTaskRemoved(rootIntent: Intent?) {
@@ -135,10 +234,12 @@ class SpotifeurPlaybackService : MediaSessionService() {
         behavior?.close(); behavior = null
         preloader?.close(); preloader = null
         recovery?.close(); recovery = null
+        crossfade?.close(); crossfade = null
         effectsScope.cancel()
         EqualizerRuntime.setAudioSessionId(0)
         nativeAudio?.cancelPending()
-        mediaSession?.run { player.release(); release() }; mediaSession = null
+        mediaSession?.release(); mediaSession = null
+        loudness.keys.forEach { it.release() }; loudness.clear(); active = null; renderingPlayer = null
         nativeAudio?.close(); nativeAudio = null
         source?.close(); source = null
         super.onDestroy()
@@ -159,4 +260,11 @@ class SpotifeurPlaybackService : MediaSessionService() {
         /** Instrumented tests only. */
         @Volatile internal var currentNativeAudio: NativeAudioProvider? = null
     }
+
 }
+
+/**
+ * The player that is rendering now, for Listen together: its position comes from the audio output itself, where the
+ * media controller only extrapolates between session updates (it was seen jumping by up to 200 ms). Main thread only.
+ */
+@Volatile var renderingPlayer: ExoPlayer? = null

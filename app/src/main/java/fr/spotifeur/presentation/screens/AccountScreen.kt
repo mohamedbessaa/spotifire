@@ -1,5 +1,3 @@
-@file:Suppress("LocalContextGetResourceValueCall") // A language change recreates the activity.
-
 package fr.spotifeur.presentation.screens
 
 import androidx.compose.foundation.layout.Arrangement
@@ -78,7 +76,7 @@ fun AccountScreen(model: SpotifeurModel, account: AccountUi) {
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 Text(
-                    "Spotifeur",
+                    "Spotifire",
                     modifier = Modifier.padding(start = 4.dp, top = 72.dp, bottom = 40.dp),
                     fontFamily = GoogleSansRounded,
                     fontWeight = FontWeight.ExtraBold,

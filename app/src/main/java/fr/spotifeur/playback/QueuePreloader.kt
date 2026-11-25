@@ -275,6 +275,7 @@ internal class PlaybackRecovery(
         val now = android.os.SystemClock.elapsedRealtime()
         if (now - lastFailureAt > STABLE_PLAYBACK_MS) attempts = 0
         lastFailureAt = now
+        if (fallBackToEngine(error)) return
         if (!player.playWhenReady) return
         if (!NetworkMonitor.online.value) { skipToAvailable(); return }
         if (attempts >= MAX_ATTEMPTS || (!error.isConnectionFailure() && !error.hasNativePreparationFailure())) return
@@ -283,6 +284,28 @@ internal class PlaybackRecovery(
             delay(attempts * RETRY_STEP_MS)
             if (player.playerError != null) { audio?.retryFailed(); player.prepare() }
         }
+    }
+
+    /**
+     * A Spotify track read from its matched copy that could not be opened (no copy, refused address) plays through
+     * Spotify's engine instead, from the same position. A lost connection is left to the retries below.
+     */
+    private fun fallBackToEngine(error: PlaybackException): Boolean {
+        val item = player.currentMediaItem ?: return false
+        val uri = item.localConfiguration?.uri ?: return false
+        if (!YouTubeUris.isYouTube(uri) || uri.authority != "match" || !NetworkMonitor.online.value) return false
+        val copyRefused = generateSequence<Throwable>(error) { it.cause }.any { it is fr.spotifeur.data.youtube.YouTubeFailure }
+        if (!copyRefused && error.isConnectionFailure()) return false
+        if (!AudioRoute.canFallBackToEngine(item.mediaId)) return false
+        AudioRoute.noCopy(item.mediaId)
+        val position = player.currentPosition
+        val engine = item.buildUpon().setUri(Uri.parse(item.mediaId)).setCustomCacheKey(null)
+            .setMimeType(androidx.media3.common.MimeTypes.APPLICATION_M3U8).build()
+        android.util.Log.i("SpotifeurAudio", "copy failed for ${item.mediaId} (${error.errorCodeName}): engine")
+        player.replaceMediaItem(player.currentMediaItemIndex, engine)
+        player.seekTo(player.currentMediaItemIndex, position)
+        player.prepare()
+        return true
     }
 
     private fun skipToAvailable() {
@@ -354,7 +377,8 @@ internal fun musicOf(item: MediaItem) = Music(item.mediaId, item.mediaMetadata.t
     item.mediaMetadata.artist?.toString().orEmpty(), MusicKind.Track, imageUrl = item.mediaMetadata.artworkUri?.toString(),
     durationMs = item.mediaMetadata.extras?.getInt("duration") ?: 0, artwork = item.mediaMetadata.extras?.getInt("artwork") ?: 0,
     album = item.mediaMetadata.extras?.getString("album").orEmpty(), mediaUri = item.mediaMetadata.extras?.getString("mediaUri"),
-    quality = item.mediaMetadata.extras?.getString("quality").orEmpty())
+    quality = item.mediaMetadata.extras?.getString("quality").orEmpty(), isrc = item.mediaMetadata.extras?.getString("isrc"),
+    note = item.mediaMetadata.extras?.getString("note").orEmpty())
 
 /** The queue length never expands the prefetch window beyond twenty following tracks. */
 internal fun preloadRange(current: Int, count: Int, following: Int): IntRange =

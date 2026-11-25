@@ -1,5 +1,6 @@
 package fr.spotifeur.presentation.viewmodel
 
+import fr.spotifeur.presentation.utils.spotifyShareUrl
 import android.content.Context
 import androidx.compose.animation.core.Animatable
 import androidx.compose.runtime.Stable
@@ -15,7 +16,6 @@ import fr.spotifeur.playback.AudioCache
 import fr.spotifeur.playback.CachedAudio
 import fr.spotifeur.playback.DownloadCenter
 import fr.spotifeur.playback.DownloadedTrack
-import fr.spotifeur.utils.AppLocales
 import fr.spotifeur.data.MusicKind
 import fr.spotifeur.data.model.Artist
 import fr.spotifeur.data.model.Lyrics
@@ -138,6 +138,7 @@ class PlayerViewModel(val model: SpotifeurModel, private val scope: CoroutineSco
                 playWhenReady = state.playWhenReady,
                 totalDuration = remote?.durationMs ?: state.durationMs.toLong(),
                 isShuffleEnabled = state.shuffle,
+                isSmartShuffle = state.smartShuffle,
                 repeatMode = state.repeat,
                 isBuffering = state.buffering,
             )
@@ -584,11 +585,13 @@ class PlayerViewModel(val model: SpotifeurModel, private val scope: CoroutineSco
             try {
                 val all = model.tracksOf(item).filterNot(Music::isLocalTrack)
                 if (all.isEmpty()) { sendToast(context.getString(R.string.no_tracks_for, item.title)); return@launch }
-                // Spotify keeps its own files only for accounts allowed to; YouTube Music files are always kept.
-                val throughSpotify = fr.spotifeur.data.SpotifyAccount.signedIn && all.any { it.id.startsWith("spotify:track:") }
-                val allowed = !throughSpotify || model.offlineAllowed()
+                // Spotify keeps its own files only for accounts allowed to. Tracks read from their copy (Free accounts:
+                // Monochrome or YouTube Music) are kept as that copy, so they never need Spotify's offline right.
+                val signedIn = fr.spotifeur.data.SpotifyAccount.signedIn
+                val throughEngine = all.filter { it.id.startsWith("spotify:track:") && signedIn && !fr.spotifeur.playback.AudioRoute.viaCopy(it, signedIn) }
+                val allowed = throughEngine.isEmpty() || model.offlineAllowed()
                 kotlinx.coroutines.currentCoroutineContext().ensureActive()
-                val tracks = if (allowed) all else all.filter { it.source == fr.spotifeur.data.MusicSource.YouTubeMusic }
+                val tracks = if (allowed) all else all - throughEngine.toSet()
                 if (tracks.isEmpty()) { sendToast(context.getString(R.string.download_not_allowed)); return@launch }
                 DownloadCenter.enqueue(context, item, tracks) {
                     sendToast(context.getString(R.string.download_failed, item.title))
@@ -643,7 +646,6 @@ class PlayerViewModel(val model: SpotifeurModel, private val scope: CoroutineSco
     suspend fun exportBackup(): String = backups.export(searchHistory.value)
     suspend fun restoreBackup(content: String) {
         writeHistory(backups.restore(content))
-        AppLocales.apply(context, settings.value.language)
     }
 
     // Lyrics ------------------------------------------------------------------------------------
@@ -665,7 +667,9 @@ class PlayerViewModel(val model: SpotifeurModel, private val scope: CoroutineSco
         lyricsJob?.cancel()
         mutableLyrics.value = LyricsState(song.id, loading = true, offset = offset)
         lyricsJob = scope.launch {
+            // Word-by-word first, as Spotify's own lyrics are line by line.
             val lyrics = lyricsRepository.cached(song.id)
+                ?: (if (settings.value.lyricsFallback) lyricsRepository.fromLyricsPlus(song) else null)
                 ?: lyricsRepository.fromSpotify(song, model.lyricsSource())
                 ?: if (settings.value.lyricsFallback) lyricsRepository.fromLrcLib(song) else null
             mutableLyrics.value = LyricsState(song.id, lyrics = lyrics, offset = offset)
@@ -726,6 +730,96 @@ class PlayerViewModel(val model: SpotifeurModel, private val scope: CoroutineSco
     private val mutableToasts = MutableSharedFlow<String>(extraBufferCapacity = 4)
     val toastEvents: SharedFlow<String> = mutableToasts.asSharedFlow()
     fun sendToast(message: String) { mutableToasts.tryEmit(message) }
+
+    private val mutableSharedOpens = kotlinx.coroutines.flow.MutableSharedFlow<Music>(extraBufferCapacity = 4)
+    /** Albums, artists and playlists a friend shared, to open as soon as the screen can. */
+    val sharedOpens: kotlinx.coroutines.flow.SharedFlow<Music> = mutableSharedOpens
+
+    /**
+     * A link a friend sent (opened with Spotifire, or shared to it): a track plays, an album, artist or Spotify
+     * playlist opens, and a YouTube Music playlist is imported.
+     */
+    fun openSharedLink(text: String) {
+        val link = SharedLinks.SHARED_LINK.find(text)?.value ?: return
+        scope.launch {
+            try {
+                SharedLinks.SPOTIFY_LINK.find(link)?.let { m ->
+                    val item = Music("spotify:${m.groupValues[1]}:${m.groupValues[2]}", "", "", when (m.groupValues[1]) {
+                        "track" -> MusicKind.Track; "album" -> MusicKind.Album; "artist" -> MusicKind.Artist; else -> MusicKind.Playlist })
+                    if (item.kind == MusicKind.Track) playItem(item) else mutableSharedOpens.emit(item)
+                    return@launch
+                }
+                SharedLinks.YTM_TRACK.find(link)?.let { m -> playItem(Music(fr.spotifeur.data.youtube.YTM_TRACK_PREFIX + m.groupValues[1], "", "", MusicKind.Track)); return@launch }
+                val imported = model.importLink(link)
+                sendToast(context.getString(R.string.share_received))
+                mutableSharedOpens.emit(imported)
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) { sendToast(failure.message ?: context.getString(R.string.share_failed)) }
+        }
+    }
+
+    /** What the friend picker is open for: sending, editing a playlist together, or listening together. */
+    enum class FriendPick { Send, EditTogether, ListenTogether }
+    private val mutableSendRequests = kotlinx.coroutines.flow.MutableStateFlow<Pair<Music, FriendPick>?>(null)
+    val sendRequests: kotlinx.coroutines.flow.StateFlow<Pair<Music, FriendPick>?> = mutableSendRequests
+    /** Opens the in-app "Send to friends" sheet for [item]; nothing leaves the app. */
+    fun share(item: Music) { mutableSendRequests.value = item to FriendPick.Send }
+    fun pickFriends(item: Music, mode: FriendPick) { mutableSendRequests.value = item to mode }
+    fun closeSend() { mutableSendRequests.value = null }
+    /** Opens a playlist, album or artist screen (shared playlists, Blends). */
+    fun openShared(item: Music) { scope.launch { mutableSharedOpens.emit(item) } }
+
+    /** Plays [item] (unless it is already playing), then invites [friends] to listen along; each of them chooses. */
+    fun listenTogether(item: Music, friends: List<String>, allowQueue: Boolean) {
+        scope.launch {
+            val playing = model.player.state.value.track
+            if (item.kind != MusicKind.Track || playing?.id != item.id) {
+                playItem(item)
+                // Wait for the player to hold the first track, at most a few seconds.
+                repeat(30) { if (model.player.state.value.track?.let { it.id == item.id || item.kind != MusicKind.Track } == true && model.player.isPlayingNow()) return@repeat; kotlinx.coroutines.delay(100) }
+            }
+            if (model.player.state.value.track == null) { sendToast("Play something first"); return@launch }
+            fr.spotifeur.social.Jam.start(friends, allowQueue)
+            sendToast(if (friends.size == 1) "Invitation sent" else "Invitations sent")
+        }
+    }
+
+    fun editTogether(item: Music, friends: List<String>) {
+        scope.launch {
+            try { fr.spotifeur.social.SocialBridge.shareEditable(model, item, friends); sendToast(if (friends.size == 1) "Invitation sent" else "Invitations sent") }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) { sendToast(failure.message ?: "Couldn't share this playlist") }
+        }
+    }
+
+    fun sendToFriends(item: Music, to: List<String>, note: String) {
+        scope.launch {
+            try {
+                model.sendToFriends(item, to, note)
+                sendToast(if (to.size == 1) "Sent" else "Sent to ${to.size} friends")
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) { sendToast(failure.message ?: context.getString(R.string.share_failed)) }
+        }
+    }
+
+    /** Plays what a friend sent: its songs, the song itself, or opens the album, artist or playlist. */
+    fun playShared(shared: fr.spotifeur.social.SharedMusic) {
+        when {
+            shared.tracks.isNotEmpty() -> playSongs(shared.tracks.map { it.toSong() }, shared.tracks.first().toSong(), shared.item.title)
+            shared.item.kind == MusicKind.Track -> playItem(shared.item)
+            else -> scope.launch { mutableSharedOpens.emit(shared.item) }
+        }
+    }
+
+    fun saveShared(shared: fr.spotifeur.social.SharedMusic) {
+        val created = model.saveShared(shared)
+        if (created != null) scope.launch { mutableSharedOpens.emit(created) } else sendToast("Saved to your library")
+    }
+    private object SharedLinks {
+        val SHARED_LINK = Regex("""https?://\S+""")
+        val SPOTIFY_LINK = Regex("""open\.spotify\.com/(?:intl-[a-zA-Z-]+/)?(track|album|artist|playlist)/([A-Za-z0-9]{22})""")
+        val YTM_TRACK = Regex("""(?:music\.)?youtube\.com/watch\?v=([A-Za-z0-9_-]{11})(?![^ ]*list=)""")
+    }
 
     companion object {
         private const val KEY_HISTORY = "search_history"

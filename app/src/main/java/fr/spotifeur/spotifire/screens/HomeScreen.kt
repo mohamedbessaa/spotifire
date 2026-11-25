@@ -33,6 +33,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.width
+import fr.spotifeur.spotifire.components.Cover
+import fr.spotifeur.spotifire.components.pressable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
@@ -84,6 +90,13 @@ fun SpotifireHomeScreen(model: SpotifeurModel, navController: NavHostController,
     val downloads by ui.downloadCollections.collectAsStateWithLifecycle()
     val stable by ui.stablePlayerState.collectAsStateWithLifecycle()
     val discovery by model.discovery.collectAsStateWithLifecycle()
+    val mixes by model.homeMixes.collectAsStateWithLifecycle()
+    val history by model.listeningHistory.entries.collectAsStateWithLifecycle()
+    // The history file is read on demand: Home asks for it, off the main thread.
+    LaunchedEffect(Unit) { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { model.listeningHistory.load() } }
+    // What was actually played lately, newest first, each track once.
+    val played = remember(history) { history.sortedByDescending { it.playedAt }.map { it.track }.distinctBy { it.id }.take(20) }
+    LaunchedEffect(discovery.spotifyEnabled, library.content != null) { if (discovery.spotifyEnabled) model.loadHomeMixes() }
     var filter by rememberSaveable { mutableStateOf(HomeFilter.All) }
     var options by remember { mutableStateOf<Music?>(null) }
     val content = library.content
@@ -100,7 +113,7 @@ fun SpotifireHomeScreen(model: SpotifeurModel, navController: NavHostController,
     MusicOptionsHost(ui, navController, options) { options = null }
 
     // Shortcut grid: Liked Songs, pins, then what was recently opened.
-    val shortcuts = remember(content, pins, recent, filter, multi, youTube) {
+    val shortcuts = remember(content, pins, recent, filter, multi, youTube, mixes) {
         buildList {
             if (filter == HomeFilter.All || filter == HomeFilter.Spotify) {
                 if ((content?.savedTrackCount ?: 0) > 0) add(ui.likedSongs)
@@ -108,11 +121,14 @@ fun SpotifireHomeScreen(model: SpotifeurModel, navController: NavHostController,
             addAll(pins.filter { it.kind != MusicKind.Track && it.matches(filter) })
             addAll(recent.filter { it.kind != MusicKind.Track && it.matches(filter) })
             addAll((content?.playlists.orEmpty() + youTube + multi).filter { it.matches(filter) })
+            // A thin library still gets a full grid, as in Spotify: the mixes made for you.
+            addAll(mixes.filter { it.matches(filter) })
         }.distinctBy(Music::id).take(8)
     }
-    val shelves: List<Pair<String, List<Music>>> = remember(content, recent, youTube, multi, filter, downloads, localFiles) {
+    val shelves: List<Pair<String, List<Music>>> = remember(content, recent, youTube, multi, filter, downloads, localFiles, played) {
         listOf(
-            "Jump back in" to recent.filter { it.matches(filter) },
+            "Recently played" to played.filter { it.matches(filter) },
+            "Jump back in" to recent.filter { it.kind != MusicKind.Track && it.matches(filter) },
             "Your Spotify playlists" to content?.playlists.orEmpty().filter { filter == HomeFilter.All || filter == HomeFilter.Spotify },
             "Your YouTube Music playlists" to youTube.filter { filter == HomeFilter.All || filter == HomeFilter.YouTube },
             "Mixed playlists" to multi.filter { filter == HomeFilter.All || filter == HomeFilter.Local },
@@ -123,11 +139,21 @@ fun SpotifireHomeScreen(model: SpotifeurModel, navController: NavHostController,
         ).filter { it.second.isNotEmpty() }
     }
 
+    // Spotify's Home wash: the colour of what is playing (or the first shortcut) at the top, fading out as you scroll.
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val wash = fr.spotifeur.spotifire.components.rememberArtworkColor(
+        stable.currentSong?.albumArtUriString ?: shortcuts.firstOrNull { it.imageUrl != null }?.imageUrl ?: mixes.firstOrNull()?.imageUrl,
+        fallback = Color(0xFF2A2A2A))
+    val washAlpha by remember { androidx.compose.runtime.derivedStateOf {
+        if (listState.firstVisibleItemIndex > 2) 0f else (1f - (listState.firstVisibleItemIndex * 200 + listState.firstVisibleItemScrollOffset) / 600f).coerceIn(0f, 1f)
+    } }
     Box(Modifier.fillMaxSize().background(SpotifyColors.Background)) {
-        LazyColumn(Modifier.fillMaxSize().statusBarsPadding(), contentPadding = PaddingValues(bottom = bottomPadding.dp)) {
+        Box(Modifier.fillMaxWidth().height(380.dp).graphicsLayer { alpha = washAlpha }
+            .background(Brush.verticalGradient(listOf(wash.copy(alpha = 0.6f), wash.copy(alpha = 0.18f), Color.Transparent))))
+        LazyColumn(Modifier.fillMaxSize().statusBarsPadding(), state = listState, contentPadding = PaddingValues(bottom = bottomPadding.dp)) {
             item {
                 Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Avatar(model) { navController.navigateSafely(SpotifireRoutes.ACCOUNTS) }
+                    fr.spotifeur.spotifire.components.ProfileAvatar(model, 34.dp) { navController.navigateSafely(SpotifireRoutes.ACCOUNTS) }
                     Row(
                         Modifier.weight(1f).horizontalScroll(rememberScrollState()).padding(start = 10.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -163,6 +189,14 @@ fun SpotifireHomeScreen(model: SpotifeurModel, navController: NavHostController,
                             }
                             if (pair.size == 1) Spacer(Modifier.weight(1f))
                         }
+                    }
+                }
+            }
+            if (mixes.isNotEmpty() && (filter == HomeFilter.All || filter == HomeFilter.Spotify)) {
+                item(key = "title-mixes") { SectionTitle("Made for you") }
+                item(key = "row-mixes") {
+                    LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        items(mixes, key = { it.id }) { mix -> MixCard(mix, onClick = { open(mix) }, onLongClick = { options = mix }) }
                     }
                 }
             }
@@ -203,21 +237,30 @@ private fun EmptyHome(filter: HomeFilter, googleConnected: Boolean, spotify: Boo
     }
 }
 
-/** The round profile picture at the top left; it opens the accounts page. */
-@Composable
-private fun Avatar(model: SpotifeurModel, onClick: () -> Unit) {
-    val google by model.youTubeAccount.collectAsStateWithLifecycle()
-    val spotifyName by androidx.compose.runtime.produceState<String?>(null) {
-        value = runCatching { fr.spotifeur.data.SpotifyAccount.current()?.username() }.getOrNull()
-    }
-    val initial = (spotifyName ?: google?.name)?.trim()?.firstOrNull()?.uppercase() ?: "S"
-    Box(Modifier.size(34.dp).clip(CircleShape).background(Color(0xFFE8622C)).quietClick(onClick), contentAlignment = Alignment.Center) {
-        Text(initial, color = Color.Black, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-    }
-}
-
 private fun greeting(): String = when (Calendar.getInstance().get(Calendar.HOUR_OF_DAY)) {
     in 5..11 -> "Good morning"
     in 12..17 -> "Good afternoon"
     else -> "Good evening"
+}
+
+/**
+ * A mix as Spotify draws its Daily Mixes: the artwork, a band of its own colour across the bottom with the mix name
+ * set in it, and the artists underneath.
+ */
+@Composable
+private fun MixCard(mix: Music, onClick: () -> Unit, onLongClick: () -> Unit) {
+    val band = fr.spotifeur.spotifire.components.rememberArtworkColor(mix.imageUrl, fallback = Color(0xFF3A3A3A))
+    Column(Modifier.width(156.dp).pressable(onClick, onLongClick)) {
+        Box(Modifier.size(156.dp).clip(RoundedCornerShape(6.dp))) {
+            Cover(mix.imageUrl, Modifier.fillMaxSize(), RoundedCornerShape(0.dp))
+            Box(Modifier.fillMaxWidth().height(44.dp).align(Alignment.BottomStart)
+                .background(Brush.verticalGradient(listOf(band.copy(alpha = 0f), band.copy(alpha = 0.92f)))))
+            Box(Modifier.fillMaxWidth().height(4.dp).align(Alignment.BottomStart).background(band))
+            Text(mix.title.removeSuffix(" Mix"), Modifier.align(Alignment.BottomStart).padding(start = 10.dp, end = 10.dp, bottom = 10.dp),
+                color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+        }
+        Text(mix.subtitle, Modifier.padding(top = 8.dp), color = SpotifyColors.TextSecondary, fontSize = 13.sp, maxLines = 2,
+            lineHeight = 17.sp, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+    }
 }

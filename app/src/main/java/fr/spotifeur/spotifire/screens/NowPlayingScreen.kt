@@ -70,6 +70,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.withStyle
+import androidx.compose.foundation.layout.offset
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
@@ -94,7 +97,6 @@ import fr.spotifeur.data.model.Lyrics
 import fr.spotifeur.data.model.Song
 import fr.spotifeur.data.model.toMusic
 import fr.spotifeur.presentation.components.SongOptionsHost
-import fr.spotifeur.presentation.utils.shareMusic
 import fr.spotifeur.spotifire.components.Cover
 import fr.spotifeur.spotifire.components.SourceBadge
 import fr.spotifeur.spotifire.components.TrackRow
@@ -127,9 +129,8 @@ fun SpotifireNowPlaying(model: SpotifeurModel, navController: NavHostController,
 
     SongOptionsHost(ui, navController, options, queue, playerUi.currentQueueSourceName) { options = null }
 
-    // Slow back-and-forth zoom on the full-screen artwork, so it feels alive like a Canvas loop.
-    val breathing = rememberInfiniteTransition(label = "artwork")
-    val zoom by breathing.animateFloat(1.0f, 1.12f, infiniteRepeatable(tween(14000, easing = LinearEasing), RepeatMode.Reverse), label = "zoom")
+    // The glow stays still: the Canvas is what moves, and a looping zoom only cost battery.
+    val zoom = 1.06f
     val scroll = rememberScrollState()
     var dragged by remember { mutableFloatStateOf(0f) }
 
@@ -153,6 +154,13 @@ fun SpotifireNowPlaying(model: SpotifeurModel, navController: NavHostController,
                 RectangleShape,
             )
         }
+        // Canvas: the track's looping video, when it has one, over the glow and under the same shade.
+        val canvasOn = ui.settings.collectAsStateWithLifecycle().value.canvas
+        val canvasUrl by androidx.compose.runtime.produceState<String?>(null, song.id, canvasOn) {
+            value = if (canvasOn) fr.spotifeur.data.SpotifyCanvas.videoFor(song.id) else null
+        }
+        val canvas = canvasUrl?.takeIf { pane == PlayerPane.Player }
+        if (canvas != null) fr.spotifeur.spotifire.components.CanvasVideo(canvas, Modifier.fillMaxSize())
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(
             0f to Color.Black.copy(alpha = 0.25f), 0.35f to Color.Transparent, 0.62f to Color.Black.copy(alpha = 0.35f), 1f to Color.Black.copy(alpha = 0.9f),
         )))
@@ -179,12 +187,12 @@ fun SpotifireNowPlaying(model: SpotifeurModel, navController: NavHostController,
                 PlayerPane.Queue -> Column(Modifier.weight(1f).padding(horizontal = 20.dp).navigationBarsPadding()) {
                     QueuePane(ui, queue, song, playerUi.currentQueueSourceName, Modifier.weight(1f)) { options = it }
                     SeekBar(position, state.totalDuration) { ui.seekTo(it) }
-                    Controls(ui, state.isPlaying, state.isBuffering, state.isShuffleEnabled, state.repeatMode, timer != null) { sleepMenu = true }
+                    Controls(ui, state.isPlaying, state.isBuffering, state.isShuffleEnabled, state.repeatMode, state.isSmartShuffle)
                 }
                 PlayerPane.Lyrics -> Column(Modifier.weight(1f).padding(horizontal = 20.dp).navigationBarsPadding()) {
                     LyricsPane(state.lyrics, state.isLoadingLyrics, position, tint, Modifier.weight(1f)) { ui.seekTo(it) }
                     SeekBar(position, state.totalDuration) { ui.seekTo(it) }
-                    Controls(ui, state.isPlaying, state.isBuffering, state.isShuffleEnabled, state.repeatMode, timer != null) { sleepMenu = true }
+                    Controls(ui, state.isPlaying, state.isBuffering, state.isShuffleEnabled, state.repeatMode, state.isSmartShuffle)
                 }
                 PlayerPane.Player -> Column(Modifier.weight(1f).verticalScroll(scroll)) {
                     // First "page": everything sits at the bottom, over the artwork.
@@ -194,7 +202,8 @@ fun SpotifireNowPlaying(model: SpotifeurModel, navController: NavHostController,
                         Spacer(Modifier.weight(1f))
                         // The cover, medium size, in the middle. Swipe it to change track.
                         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                            Cover(
+                            // With a Canvas the video is the artwork: the cover leaves its place empty (still swipeable).
+                            if (canvas == null) Cover(
                                 song.albumArtUriString,
                                 Modifier.fillMaxWidth(0.78f).widthIn(max = 340.dp).aspectRatio(1f)
                                     .shadow(32.dp, RoundedCornerShape(10.dp), ambientColor = tint, spotColor = Color.Black)
@@ -207,7 +216,14 @@ fun SpotifireNowPlaying(model: SpotifeurModel, navController: NavHostController,
                                         )
                                     },
                                 RoundedCornerShape(10.dp),
-                            )
+                            ) else Box(Modifier.fillMaxWidth(0.78f).widthIn(max = 340.dp).aspectRatio(1f).pointerInput(song.id) {
+                                var drag = 0f
+                                detectHorizontalDragGestures(
+                                    onDragStart = { drag = 0f },
+                                    onHorizontalDrag = { _, amount -> drag += amount },
+                                    onDragEnd = { if (drag < -140f) ui.nextSong() else if (drag > 140f) ui.previousSong() },
+                                )
+                            })
                         }
                         Spacer(Modifier.weight(1f))
                         // The line being sung right now, as Spotify shows it over the Canvas.
@@ -235,20 +251,21 @@ fun SpotifireNowPlaying(model: SpotifeurModel, navController: NavHostController,
                         SeekBar(position, state.totalDuration) { ui.seekTo(it) }
                         slice.audioMetaText?.let { Text(it, color = Color.White.copy(alpha = 0.5f), fontSize = 11.sp) }
                         Spacer(Modifier.height(8.dp))
-                        Box {
-                            Controls(ui, state.isPlaying, state.isBuffering, state.isShuffleEnabled, state.repeatMode, timer != null) { sleepMenu = true }
-                            Box(Modifier.align(Alignment.TopEnd)) {
-                                SleepMenu(sleepMenu, timer != null, { sleepMenu = false }, { ui.setSleepTimer(it) }, { ui.setEndOfTrackTimer(true) }, { ui.cancelSleepTimer() })
-                            }
-                        }
-                        // Bottom row: output device, share, queue
+                        Controls(ui, state.isPlaying, state.isBuffering, state.isShuffleEnabled, state.repeatMode, state.isSmartShuffle)
+                        // Bottom row: output device, sleep timer, share, queue
                         Row(Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                             IconButton(onClick = { openOutputSwitcher(context) }) {
                                 Icon(Icons.Outlined.Speaker, "Devices", tint = Color.White, modifier = Modifier.size(26.dp))
                             }
-                            timer?.let { Text(it, color = SpotifyColors.Green, fontSize = 12.sp, modifier = Modifier.padding(start = 4.dp)) }
+                            Box {
+                                IconButton(onClick = { sleepMenu = true }) {
+                                    Icon(Icons.Outlined.Timer, "Sleep timer", tint = if (timer != null) SpotifyColors.Green else Color.White, modifier = Modifier.size(26.dp))
+                                }
+                                SleepMenu(sleepMenu, timer != null, { sleepMenu = false }, { ui.setSleepTimer(it) }, { ui.setEndOfTrackTimer(true) }, { ui.cancelSleepTimer() })
+                            }
+                            timer?.let { Text(it, color = SpotifyColors.Green, fontSize = 12.sp) }
                             Spacer(Modifier.weight(1f))
-                            if (!song.isLocal) IconButton(onClick = { context.shareMusic(song.toMusic()) }) {
+                            if (!song.isLocal) IconButton(onClick = { context.let { ui.share(song.toMusic()) } }) {
                                 Icon(Icons.Outlined.Share, "Share", tint = Color.White, modifier = Modifier.size(26.dp))
                             }
                             IconButton(onClick = { pane = PlayerPane.Queue }) {
@@ -317,8 +334,8 @@ private fun SeekBar(position: Long, duration: Long, onSeek: (Long) -> Unit) {
 }
 
 /**
- * Shuffle, previous, the big white play button, next and the sleep timer, as in the current
- * Spotify app. Repeat is kept as a small toggle under the row.
+ * Shuffle, previous, the big white play button, next and repeat, in one row as in the Spotify app. Shuffle and repeat
+ * turn green with a dot under them when on; the sleep timer sits in the row below.
  */
 @Composable
 private fun Controls(
@@ -327,13 +344,17 @@ private fun Controls(
     buffering: Boolean,
     shuffle: Boolean,
     repeat: Int,
-    timerActive: Boolean,
-    onTimer: () -> Unit,
+    smart: Boolean = false,
 ) {
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
         IconButton(onClick = { ui.toggleShuffle() }) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(Icons.Filled.Shuffle, "Shuffle", tint = if (shuffle) SpotifyColors.Green else Color.White, modifier = Modifier.size(28.dp))
+                // Smart Shuffle: the shuffle glyph with a sparkle, as in Spotify.
+                Box {
+                    Icon(Icons.Filled.Shuffle, if (smart) "Smart Shuffle" else "Shuffle", tint = if (shuffle) SpotifyColors.Green else Color.White, modifier = Modifier.size(28.dp))
+                    if (smart) Icon(Icons.Filled.AutoAwesome, null, tint = SpotifyColors.Green,
+                        modifier = Modifier.size(12.dp).align(Alignment.TopEnd).offset(x = 5.dp, y = (-4).dp))
+                }
                 if (shuffle) Box(Modifier.size(4.dp).clip(CircleShape).background(SpotifyColors.Green))
             }
         }
@@ -348,17 +369,12 @@ private fun Controls(
         IconButton(onClick = { ui.nextSong() }, modifier = Modifier.size(60.dp)) {
             Icon(Icons.Filled.SkipNext, "Next", tint = Color.White, modifier = Modifier.size(46.dp))
         }
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            IconButton(onClick = onTimer) {
-                Icon(Icons.Outlined.Timer, "Sleep timer", tint = if (timerActive) SpotifyColors.Green else Color.White, modifier = Modifier.size(28.dp))
+        IconButton(onClick = { ui.cycleRepeatMode() }) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(if (repeat == Player.REPEAT_MODE_ONE) Icons.Filled.RepeatOne else Icons.Filled.Repeat, "Repeat",
+                    tint = if (repeat != Player.REPEAT_MODE_OFF) SpotifyColors.Green else Color.White, modifier = Modifier.size(28.dp))
+                if (repeat != Player.REPEAT_MODE_OFF) Box(Modifier.size(4.dp).clip(CircleShape).background(SpotifyColors.Green))
             }
-        }
-    }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-        Row(Modifier.clip(RoundedCornerShape(50)).quietClick { ui.cycleRepeatMode() }.padding(horizontal = 8.dp, vertical = 2.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            Icon(if (repeat == Player.REPEAT_MODE_ONE) Icons.Filled.RepeatOne else Icons.Filled.Repeat, "Repeat",
-                tint = if (repeat != Player.REPEAT_MODE_OFF) SpotifyColors.Green else Color.White.copy(alpha = 0.6f), modifier = Modifier.size(18.dp))
         }
     }
 }
@@ -383,6 +399,9 @@ private fun QueuePane(
     modifier: Modifier,
     onMore: (Song) -> Unit,
 ) {
+    // Smart Shuffle's picks, as the player knows them.
+    val playback by ui.model.player.state.collectAsStateWithLifecycle()
+    val recommended = remember(playback.queue) { playback.queue.filter { it.note == fr.spotifeur.playback.SMART_NOTE }.map { it.id }.toSet() }
     val index = queue.indexOfFirst { it.id == current.id }.coerceAtLeast(0)
     val listState = rememberLazyListState()
     LazyColumn(modifier.fillMaxWidth(), state = listState, contentPadding = PaddingValues(vertical = 8.dp)) {
@@ -402,7 +421,8 @@ private fun QueuePane(
         itemsIndexed(upcoming, key = { i, song -> "$i-${song.id}" }) { i, song ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.weight(1f)) {
-                    TrackRow(song.title, song.displayArtist, song.albumArtUriString, song.source, playing = false,
+                    val picked = song.id in recommended
+                    TrackRow(song.title, if (picked) "Recommended · ${song.displayArtist}" else song.displayArtist, song.albumArtUriString, song.source, playing = false,
                         onClick = { ui.showAndPlaySong(song, queue, source, index + 1 + i) }, onMore = { onMore(song) })
                 }
                 IconButton(onClick = { ui.removeSongFromQueue(song.id) }) { Icon(Icons.Filled.Close, "Remove", tint = SpotifyColors.TextSecondary) }
@@ -452,10 +472,18 @@ private fun LyricsPane(lyrics: Lyrics?, loading: Boolean, position: Long, tint: 
                 Text("No lyrics for this song.", Modifier.align(Alignment.Center), color = Color.White, fontSize = 16.sp)
             else -> LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(20.dp)) {
                 if (synced != null) itemsIndexed(synced) { i, line ->
-                    Text(line.line.ifBlank { "♪" }, color = when {
+                    val upcoming = Color.Black.copy(alpha = 0.55f)
+                    val words = line.words
+                    // The line being sung fills word by word when the lyrics carry word timing.
+                    val text = if (i == active && !words.isNullOrEmpty()) androidx.compose.ui.text.buildAnnotatedString {
+                        words.forEach { word ->
+                            withStyle(androidx.compose.ui.text.SpanStyle(color = if (word.time <= position) Color.White else upcoming)) { append(word.word) }
+                        }
+                    } else androidx.compose.ui.text.AnnotatedString(line.line.ifBlank { "♪" })
+                    Text(text, color = when {
                         i == active -> Color.White
                         i < active -> Color.White.copy(alpha = 0.75f)
-                        else -> Color.Black.copy(alpha = 0.55f)
+                        else -> upcoming
                     }, fontSize = 24.sp, fontWeight = FontWeight.Bold, lineHeight = 30.sp,
                         modifier = Modifier.padding(vertical = 6.dp).quietClick { onSeek(line.time.toLong()) })
                 } else itemsIndexed(lyrics?.plain.orEmpty()) { _, line ->

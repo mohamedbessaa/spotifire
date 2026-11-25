@@ -6,7 +6,13 @@ import fr.spotifeur.data.Music
 import java.text.Normalizer
 
 /** What is known of a track that has to be found on YouTube Music. */
-data class MatchQuery(val key: String, val title: String, val artists: String, val durationMs: Int, val album: String = "")
+data class MatchQuery(
+    val key: String, val title: String, val artists: String, val durationMs: Int, val album: String = "",
+    /** The recording's ISRC when Spotify gave one: YouTube Music search finds many recordings by it. */
+    val isrc: String? = null,
+    /** Spotify's engine can play the exact recording instead: only a confident match is worth taking. */
+    val strict: Boolean = false,
+)
 
 /**
  * Finds the YouTube Music recording of a track known by title, artists and duration: a Spotify track
@@ -22,19 +28,34 @@ object TrackMatcher {
     /** Blocking: searches the songs and the videos shelves, then keeps the best scored candidate. */
     fun resolve(query: MatchQuery): String? {
         known(query.key)?.let { return it }
-        val text = "${query.title.searchTitle()} ${primaryArtist(query.artists)}".trim()
-        val songs = runCatching { YouTubeMusic.searchSongs(text) }.getOrDefault(emptyList())
-        val best = bestMatch(query, songs, emptyList())
-        val chosen = if (best != null && best.second >= CONFIDENT) best else {
-            val videos = runCatching { YouTubeMusic.searchVideos(text) }.getOrDefault(emptyList())
-            bestMatch(query, songs, videos)
-        }
+        // The ISRC first, as spotDL does: the topic track of that exact recording usually comes back first.
+        val byIsrc = query.isrc?.let { isrc -> runCatching { YouTubeMusic.searchSongs(isrc) }.getOrDefault(emptyList()) }.orEmpty()
+        val isrcHit = isrcMatch(query, byIsrc)
+        val chosen = isrcHit ?: run {
+            val text = "${query.title.searchTitle()} ${primaryArtist(query.artists)}".trim()
+            val songs = runCatching { YouTubeMusic.searchSongs(text) }.getOrDefault(emptyList())
+            val best = bestMatch(query, songs, emptyList())
+            if (best != null && best.second >= CONFIDENT) best else {
+                val videos = runCatching { YouTubeMusic.searchVideos(text) }.getOrDefault(emptyList())
+                bestMatch(query, songs, videos)
+            }
+        }?.takeIf { !query.strict || it.second >= STRICT }
         val videoId = chosen?.first?.youTubeVideoId ?: return null
         preferences?.edit { putString(query.key, videoId) }
         return videoId
     }
 
     fun forget(key: String) = preferences?.edit { remove(key) }
+
+    /**
+     * A result of the ISRC search is taken when its length is within [ISRC_DURATION_MS] and its title still looks like
+     * the track: the search also returns covers and loosely related uploads.
+     */
+    internal fun isrcMatch(query: MatchQuery, songs: List<Music>): Pair<Music, Double>? = songs.asSequence()
+        .filter { query.durationMs <= 0 || it.durationMs <= 0 || kotlin.math.abs(query.durationMs - it.durationMs) <= ISRC_DURATION_MS }
+        .map { it to score(query, it) }
+        .filter { it.second >= ACCEPTED && titleSimilarity(query.title, it.first.title) >= ISRC_TITLE }
+        .maxByOrNull { it.second }?.let { it.first to 1.0 }
 
     /** The candidate with the highest score, if it reaches [ACCEPTED]. Songs get a small advantage over videos. */
     fun bestMatch(query: MatchQuery, songs: List<Music>, videos: List<Music>): Pair<Music, Double>? =
@@ -143,6 +164,9 @@ object TrackMatcher {
     private val FEATURING = Regex("""(?i)\s(feat|ft)\.?\s.*$""")
     private const val ACCEPTED = 0.55
     private const val CONFIDENT = 0.8
+    private const val STRICT = 0.72
+    private const val ISRC_DURATION_MS = 3_000
+    private const val ISRC_TITLE = 0.6
     private const val MIN_TITLE = 0.45
     private const val SONG_BONUS = 0.05
     private const val ALBUM_BONUS = 0.05

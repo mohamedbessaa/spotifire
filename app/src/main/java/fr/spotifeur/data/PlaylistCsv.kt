@@ -27,7 +27,7 @@ object PlaylistCsv {
         if (rows.isEmpty()) throw IllegalArgumentException("The file is empty.")
         val header = rows.first().map { it.trim().lowercase() }
         val columns = HEADER.associateWith(header::indexOf)
-        if (columns.getValue("id") < 0) throw IllegalArgumentException("This file was not exported by Spotifeur.")
+        if (columns.getValue("id") < 0) throw IllegalArgumentException("This file was not exported by Spotifire.")
         fun List<String>.at(column: String) = columns.getValue(column).takeIf { it >= 0 }?.let(::getOrNull)?.trim().orEmpty()
         val tracks = rows.drop(1).mapNotNull { row ->
             val id = row.at("id").ifBlank { return@mapNotNull null }

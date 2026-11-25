@@ -16,17 +16,9 @@ fun formatDuration(milliseconds: Long): String {
     }
 }
 
-fun formatSongCount(count: Int): String {
-    val french = java.util.Locale.getDefault().language == "fr"
-    return when {
-        french -> if (count > 1) "$count titres" else "$count titre"
-        count == 1 -> "1 track"
-        else -> "$count tracks"
-    }
-}
+fun formatSongCount(count: Int): String = if (count == 1) "1 track" else "$count tracks"
 
-fun formatRadioTitle(name: String): String =
-    if (java.util.Locale.getDefault().language == "fr") "Radio de $name" else "$name Radio"
+fun formatRadioTitle(name: String): String = "$name Radio"
 
 private val storedTrackCount = Regex("""^(\d+) (titres?|tracks?)$""")
 

@@ -1,0 +1,36 @@
+package fr.spotifeur.social
+
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+class PositionFilterTest {
+    @Test
+    fun alternatingJitterCancelsOut() {
+        val f = PositionFilter()
+        val jitter = listOf(50, 64, -160, 124, -202, 73, 84, -203, 136, -161, 123, 74)
+        jitter.forEachIndexed { i, j -> f.add(readAt = 1000L + i * 500, position = 20_000L + i * 500 + j, rate = 1f, playing = true, track = "t") }
+        // Truth at 7000: 20000 + 6000.
+        assertEquals(26_000.0, f.estimate(7_000)!!.toDouble(), 40.0)
+    }
+
+    @Test
+    fun aSeekATrackChangeOrAPauseStartsOver() {
+        val f = PositionFilter()
+        repeat(6) { f.add(1000L + it * 500, 10_000L + it * 500, 1f, true, "t") }
+        f.add(4_000, 60_000, 1f, true, "t") // seek
+        assertEquals(60_500.0, f.estimate(4_500)!!.toDouble(), 1.0)
+        f.add(4_500, 0, 1f, true, "u") // next track
+        assertEquals(100.0, f.estimate(4_600)!!.toDouble(), 1.0)
+        f.add(5_000, 500, 1f, false, "u") // paused: the position stays
+        assertEquals(500.0, f.estimate(9_000)!!.toDouble(), 1.0)
+    }
+
+    @Test
+    fun aSpeedNudgeIsFollowed() {
+        val f = PositionFilter()
+        repeat(4) { f.add(1000L + it * 500, 10_000L + it * 500, 1f, true, "t") }
+        // At 3% faster the position runs ahead of the clock; the filter restarts with the new rate.
+        repeat(4) { f.add(3000L + it * 500, 12_000L + (it * 500 * 1.03).toLong(), 1.03f, true, "t") }
+        assertEquals(12_000 + 2000 * 1.03, f.estimate(5_000)!!.toDouble(), 5.0)
+    }
+}

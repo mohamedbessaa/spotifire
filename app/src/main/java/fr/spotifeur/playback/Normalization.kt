@@ -1,15 +1,19 @@
+// The limiter and gain glide are adapted from BitChord LoudnessProcessor.kt (GPLv3).
 package fr.spotifeur.playback
 
 import android.content.Context
+import androidx.media3.common.C
+import androidx.media3.common.audio.AudioProcessor.AudioFormat
+import androidx.media3.common.audio.BaseAudioProcessor
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.exoplayer.audio.AudioSink
-import androidx.media3.exoplayer.audio.ForwardingAudioSink
 import fr.spotifeur.data.AudioIndex
 import fr.spotifeur.data.youtube.YTM_TRACK_PREFIX
 import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.math.abs
+import kotlin.math.exp
 import kotlin.math.min
-import kotlin.math.pow
 
 /**
  * Loudness of tracks as their service publishes it. Spotify gives each file's integrated loudness
@@ -17,58 +21,119 @@ import kotlin.math.pow
  * the difference from its own reference, in the player response.
  */
 object TrackLoudness {
-    /** Spotify's default normalization level, in LUFS. YouTube's reference is the same. */
-    private const val TARGET_LUFS = -14f
-    /** Headroom kept under 0 dBFS when a quiet track would be raised. */
+    const val OFF = "off"
+    const val QUIET = "quiet"
+    const val NORMAL = "normal"
+    const val LOUD = "loud"
+    /** YouTube's reference loudness, in LUFS: its `loudnessDb` is the distance from it. */
+    private const val YOUTUBE_REFERENCE_LUFS = -14f
+    /** Headroom kept under 0 dBFS when a track is raised, except at the loud level. */
     private const val PEAK_CEILING_DB = -1f
+    private const val MIN_GAIN_DB = -20f
+    private const val MAX_GAIN_DB = 12f
     private val youtube = ConcurrentHashMap<String, Float>()
 
     fun rememberYouTube(videoId: String, loudnessDb: Float) { if (loudnessDb.isFinite()) youtube[videoId] = loudnessDb }
 
-    /** Gain to apply to [mediaId] in dB, or null when its loudness is unknown (local files included). */
-    fun gainDb(context: Context, mediaId: String): Float? {
-        if (mediaId.startsWith(YTM_TRACK_PREFIX)) return youtube[mediaId.removePrefix(YTM_TRACK_PREFIX)]?.let { -it }
+    /** Target loudness in LUFS of a level, null when off or unknown. */
+    fun targetLufs(level: String): Float? = when (level) {
+        QUIET -> -23f
+        NORMAL -> -14f
+        LOUD -> -11f
+        else -> null
+    }
+
+    /** Gain to apply to [mediaId] in dB at [level], or null when off or its loudness is unknown (local files included). */
+    fun gainDb(context: Context, mediaId: String, level: String): Float? {
+        val target = targetLufs(level) ?: return null
+        if (mediaId.startsWith(YTM_TRACK_PREFIX)) {
+            val loudness = youtube[mediaId.removePrefix(YTM_TRACK_PREFIX)] ?: return null
+            // `loudnessDb` is how far the track sits above YouTube's reference: +3 means -11 LUFS. Only that offset is
+            // published, no peak: the limiter catches what the gain raises.
+            return youTubeGainDb(loudness, target)
+        }
         if (!mediaId.startsWith("spotify:track:")) return null
         val values = AudioIndex.get(context).loudness(mediaId) ?: return null
-        return spotifyGainDb(values[0], values[1])
+        return spotifyGainDb(values[0], values[1], target, limitByPeak = level != LOUD)
     }
 
-    internal fun spotifyGainDb(loudnessDb: Float, truePeakDb: Float): Float? {
+    internal fun youTubeGainDb(loudnessDb: Float, targetLufs: Float): Float =
+        (targetLufs - (YOUTUBE_REFERENCE_LUFS + loudnessDb)).coerceIn(MIN_GAIN_DB, MAX_GAIN_DB)
+
+    internal fun spotifyGainDb(loudnessDb: Float, truePeakDb: Float, targetLufs: Float, limitByPeak: Boolean): Float? {
         if (!loudnessDb.isFinite()) return null
-        val gain = TARGET_LUFS - loudnessDb
-        return if (truePeakDb.isFinite()) min(gain, PEAK_CEILING_DB - truePeakDb) else gain
+        val gain = targetLufs - loudnessDb
+        val capped = if (limitByPeak && truePeakDb.isFinite()) min(gain, PEAK_CEILING_DB - truePeakDb) else gain
+        return capped.coerceIn(MIN_GAIN_DB, MAX_GAIN_DB)
     }
-
-    /**
-     * Linear factor for the output volume. Volume can only lower the signal: louder tracks are brought
-     * down to the target, quieter ones keep their level instead of being raised with a limiter.
-     */
-    fun linear(gainDb: Float?): Float = if (gainDb == null || gainDb >= 0f) 1f else 10f.pow(gainDb / 20f).coerceIn(0.05f, 1f)
 }
 
 /**
- * Multiplies the player's volume by the current track's normalization factor. The factor is set from the
- * main thread and applied on the playback thread, where the sink's own calls arrive.
+ * Applies a linear gain to 16-bit PCM, then a peak limiter at -1 dBFS (instant attack, ~150 ms
+ * release, no lookahead). [gain] is set from the main thread and read on the playback thread; a
+ * change glides over ~50 ms so track changes do not click. Other encodings pass through untouched.
  */
 @UnstableApi
-internal class NormalizingAudioSink(sink: AudioSink) : ForwardingAudioSink(sink) {
-    @Volatile var factor: Float = 1f
-    private var volume = 1f
-    private var applied = Float.NaN
+internal class LoudnessProcessor : BaseAudioProcessor() {
+    @Volatile var gain: Float = 1f
+    private var current = 1f
+    private var reduction = 1f
+    private var snap = true
+    private var glideCoef = 1f
+    private var releaseCoef = 1f
 
-    override fun setVolume(volume: Float) {
-        this.volume = volume
-        apply()
+    override fun onConfigure(inputAudioFormat: AudioFormat): AudioFormat {
+        if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT) return AudioFormat.NOT_SET
+        glideCoef = coefficient(GLIDE_SECONDS, inputAudioFormat.sampleRate)
+        releaseCoef = coefficient(RELEASE_SECONDS, inputAudioFormat.sampleRate)
+        return inputAudioFormat
     }
 
-    override fun handleBuffer(buffer: ByteBuffer, presentationTimeUs: Long, encodedAccessUnitCount: Int): Boolean {
-        if (factor != applied) apply()
-        return super.handleBuffer(buffer, presentationTimeUs, encodedAccessUnitCount)
+    override fun onFlush() { reduction = 1f; snap = true }
+
+    override fun queueInput(inputBuffer: ByteBuffer) {
+        val size = inputBuffer.remaining()
+        if (size == 0) return
+        val target = gain
+        if (snap) { current = target; snap = false }
+        val output = replaceOutputBuffer(size).order(ByteOrder.LITTLE_ENDIAN)
+        val input = inputBuffer.order(ByteOrder.LITTLE_ENDIAN)
+        // Nothing to scale and nothing held down: copy the bytes as they are.
+        if (target == 1f && abs(current - 1f) < SETTLED && reduction >= 1f - SETTLED) {
+            current = 1f; reduction = 1f
+            output.put(input).flip()
+            return
+        }
+        val channels = inputAudioFormat.channelCount
+        var g = current
+        var gr = reduction
+        while (input.remaining() >= 2 * channels) {
+            g += (target - g) * glideCoef
+            val start = input.position()
+            var peak = 0f
+            for (c in 0 until channels) peak = maxOf(peak, abs(input.getShort(start + 2 * c).toInt()).toFloat())
+            peak *= g
+            val wanted = if (peak > LIMIT) LIMIT / peak else 1f
+            gr = if (wanted < gr) wanted else gr + (wanted - gr) * releaseCoef
+            val applied = g * gr
+            // Truncation toward zero keeps the result at or under the ceiling.
+            for (c in 0 until channels) output.putShort((input.short * applied).toInt().coerceIn(-32768, 32767).toShort())
+        }
+        output.put(input) // a trailing partial frame is not expected; pass it on unchanged
+        current = g; reduction = gr
+        output.flip()
     }
 
-    private fun apply() {
-        val current = factor
-        applied = current
-        super.setVolume(volume * current)
+    private fun coefficient(seconds: Double, rate: Int): Float =
+        if (rate <= 0) 1f else (1.0 - exp(-1.0 / (seconds * rate))).toFloat()
+
+    private companion object {
+        /** -1 dBFS in 16-bit sample units. */
+        const val LIMIT = 0.891f * 32767f
+        /** Time constant giving about 95% of a gain change within 50 ms. */
+        const val GLIDE_SECONDS = 0.0167
+        /** Limiter release: the reduction is mostly gone after ~150 ms. */
+        const val RELEASE_SECONDS = 0.05
+        const val SETTLED = 1e-4f
     }
 }

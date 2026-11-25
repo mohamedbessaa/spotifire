@@ -45,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -99,7 +100,10 @@ fun SpotifireSearchScreen(model: SpotifeurModel, navController: NavHostControlle
     var importing by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val searching = query.isNotBlank()
-    LaunchedEffect(searching || focused) { onTypingChange(searching || focused) }
+    // The tabs and mini player hide only while the keyboard is up, as in Spotify; results with the keyboard closed keep them.
+    @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+    val imeOpen = androidx.compose.foundation.layout.WindowInsets.isImeVisible
+    LaunchedEffect(focused && imeOpen) { onTypingChange(focused && imeOpen) }
     BackHandler(enabled = searching) { query = ""; model.search(""); focused = false }
 
     val open: (Music) -> Unit = { item ->
@@ -240,11 +244,11 @@ private fun ResultRow(item: Music, playingId: String?, saved: Set<String>, open:
 
 @Composable
 private fun GenreTile(name: String, color: Color, modifier: Modifier, onClick: () -> Unit) {
-    Box(modifier.height(96.dp).clip(RoundedCornerShape(6.dp)).background(color).quietClick(onClick)) {
-        Text(name, Modifier.padding(12.dp), color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-        // The tilted square in the corner, where Spotify puts a cover.
-        Box(Modifier.align(Alignment.BottomEnd).padding(end = 0.dp).size(58.dp).rotate(25f)
-            .background(Color.Black.copy(alpha = 0.18f), RoundedCornerShape(4.dp)))
+    // The genre's colour with a slight tone shift down to its corner; no placeholder shape pretending to be a cover.
+    Box(modifier.height(96.dp).clip(RoundedCornerShape(8.dp))
+        .background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(color, androidx.compose.ui.graphics.lerp(color, Color.Black, 0.22f))))
+        .quietClick(onClick)) {
+        Text(name, Modifier.padding(16.dp), color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
     }
 }
 

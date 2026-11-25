@@ -1,3 +1,4 @@
+import java.util.Properties
 import java.security.DigestInputStream
 import java.security.MessageDigest
 import java.util.zip.ZipFile
@@ -13,6 +14,8 @@ plugins {
 val nativeRuntime = providers.gradleProperty("nativeRuntime").map(String::toBoolean).getOrElse(true)
 
 android {
+    // Quartz logs through android.util.Log; in JVM tests those calls do nothing instead of throwing.
+    testOptions { unitTests.isReturnDefaultValues = true }
     namespace = "fr.spotifeur"
     compileSdk = 37
 
@@ -21,12 +24,32 @@ android {
         applicationId = providers.gradleProperty("spotifeurTestApplicationId").getOrElse("app.spotifire")
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("boolean", "NATIVE_RUNTIME", nativeRuntime.toString())
         buildConfigField("boolean", "FORCE_OFFLINE", project.hasProperty("spotifeurNoInternet").toString())
+        // Updates come from this repository's GitHub releases; the APK asset name starts with this prefix.
+        buildConfigField("String", "UPDATE_REPOSITORY", "\"${providers.gradleProperty("spotifireUpdateRepository").getOrElse("mohamedbessaa/spotifire")}\"")
+        buildConfigField("String", "UPDATE_APK_PREFIX", "\"spotifire-\"")
     }
+
+    // Release signing from keystore.properties (kept out of Git); without it, release builds stay unsigned.
+    val releaseKeys = rootProject.file("keystore.properties").takeIf { it.exists() }?.let { file ->
+        Properties().apply { file.inputStream().use { load(it) } }
+    }
+    if (releaseKeys != null) {
+        signingConfigs.create("release") {
+            storeFile = rootProject.file(releaseKeys.getProperty("storeFile").removePrefix("../"))
+            storePassword = releaseKeys.getProperty("storePassword")
+            keyAlias = releaseKeys.getProperty("keyAlias")
+            keyPassword = releaseKeys.getProperty("keyPassword")
+        }
+        buildTypes.getByName("release").signingConfig = signingConfigs.getByName("release")
+    }
+
+    // The app ships English only; this also drops the French strings of the libraries.
+    androidResources.localeFilters += "en"
 
     buildFeatures {
         compose = true
@@ -69,6 +92,19 @@ dependencies {
     implementation("com.google.protobuf:protobuf-javalite:4.32.1")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("androidx.media3:media3-exoplayer:1.11.1")
+    // Friends over Nostr: Amethyst's Quartz (MIT).
+    implementation("com.vitorpamplona.quartz:quartz-android:2.15.1")
+    // The Friends key, backed up end-to-end encrypted by Google and restored on a new phone.
+    implementation("com.google.android.gms:play-services-auth-blockstore:16.4.0")
+    // Battery mode for Friends: a sync every 15 minutes.
+    implementation("androidx.work:work-runtime-ktx:2.11.2")
+    // Friend QR codes: show (ZXing core) and scan (zxing-android-embedded); both Apache-2.0.
+    implementation("com.google.zxing:core:3.5.4")
+    implementation("com.journeyapps:zxing-android-embedded:4.3.0") { isTransitive = false }
+    // Quartz's crypto on the JVM, for unit tests that run its code off-device.
+    testImplementation("fr.acinq.secp256k1:secp256k1-kmp-jni-jvm:0.24.0")
+    // Frosted bars (backdrop blur), the library BitChord uses; Apache-2.0.
+    implementation("dev.chrisbanes.haze:haze:1.3.1")
     implementation("androidx.media3:media3-exoplayer-hls:1.11.1")
     implementation("androidx.media3:media3-session:1.11.1")
     implementation("androidx.media3:media3-datasource:1.11.1")

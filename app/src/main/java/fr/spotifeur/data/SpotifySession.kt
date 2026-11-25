@@ -42,6 +42,7 @@ internal class SpotifySession(
         try {
             val attributes = spotifyAttributes(transport, this, "Audio policy")
             lastAttributes = attributes
+            fr.spotifeur.playback.AudioRoute.attributesKnown(attributes)
             val signature = "${attributes["type"]}|${attributes["audio-quality"]}"
             audioPolicySignature = signature
             var limit = accountAudioBandwidth(attributes["audio-quality"], attributes["type"])
@@ -51,6 +52,7 @@ internal class SpotifySession(
             preferences.edit().putLong(key, limit).apply()
             fr.spotifeur.data.diagnostics.DiagnosticLog.record("account", "${attributeSummary(attributes)} limit=${describeBandwidth(limit)}")
             audioBandwidth = limit
+            fr.spotifeur.playback.AudioRoute.accountBandwidthKnown(limit)
             limit
         } catch (auth: SpotifyAuthRequired) { throw auth }
         catch (failure: java.io.IOException) {
@@ -64,6 +66,7 @@ internal class SpotifySession(
         val current = audioBandwidth ?: Long.MAX_VALUE
         if (limit >= current) return
         audioBandwidth = limit
+        fr.spotifeur.playback.AudioRoute.accountBandwidthKnown(limit)
         val key = audioPolicyKey ?: return
         context.getSharedPreferences("spotify_audio_policy", Context.MODE_PRIVATE).edit().putLong(key, limit)
             .putLong("$key:refused", limit).putString("$key:refusedFor", audioPolicySignature ?: "unknown").apply()

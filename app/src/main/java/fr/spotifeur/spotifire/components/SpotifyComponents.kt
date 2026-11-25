@@ -37,6 +37,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.ui.composed
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.draw.clipToBounds
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
@@ -63,10 +71,18 @@ import fr.spotifeur.spotifire.theme.SpotifyMixTitle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** Clickable with no ripple, like most taps in the Spotify app. */
-fun Modifier.quietClick(onClick: () -> Unit): Modifier = this.then(
-    Modifier.clickable(interactionSource = MutableInteractionSource(), indication = null, onClick = onClick)
-)
+/**
+ * Clickable with no ripple, like most taps in the Spotify app, but never dead: the element sinks 3% while pressed,
+ * Spotify's own touch feedback, and springs back in 120 ms.
+ */
+fun Modifier.quietClick(onClick: () -> Unit): Modifier = this.composed {
+    val source = remember { MutableInteractionSource() }
+    val pressed by source.collectIsPressedAsState()
+    val scale by androidx.compose.animation.core.animateFloatAsState(if (pressed) 0.97f else 1f,
+        androidx.compose.animation.core.tween(120), label = "press")
+    Modifier.graphicsLayer { scaleX = scale; scaleY = scale }
+        .clickable(interactionSource = source, indication = null, onClick = onClick)
+}
 
 @OptIn(ExperimentalFoundationApi::class)
 fun Modifier.pressable(onClick: () -> Unit, onLongClick: (() -> Unit)? = null): Modifier =
@@ -207,6 +223,8 @@ fun TrackRow(
     liked: Boolean = false,
     showArtwork: Boolean = true,
     available: Boolean = true,
+    /** Shared playlists: the avatar of the friend who added the song. */
+    addedBy: (@Composable () -> Unit)? = null,
 ) {
     Row(
         modifier.fillMaxWidth().alpha(if (available) 1f else 0.4f).pressable(onClick, onMore).padding(start = 16.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
@@ -224,6 +242,7 @@ fun TrackRow(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (liked) { Icon(Icons.Filled.CheckCircle, null, tint = SpotifyColors.Green, modifier = Modifier.size(13.dp)); Spacer(Modifier.width(4.dp)) }
                 if (downloaded) { Icon(Icons.Filled.Download, null, tint = SpotifyColors.Green, modifier = Modifier.size(13.dp)); Spacer(Modifier.width(4.dp)) }
+                addedBy?.let { it(); Spacer(Modifier.width(5.dp)) }
                 if (source != MusicSource.Spotify) { SourceBadge(source, size = 13.dp); Spacer(Modifier.width(4.dp)) }
                 Text(subtitle, color = SpotifyColors.TextSecondary, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
@@ -325,3 +344,50 @@ fun formatTime(ms: Long): String {
  */
 fun playableNow(context: android.content.Context, trackId: String, online: Boolean): Boolean =
     online || fr.spotifeur.data.isLocalTrackId(trackId) || fr.spotifeur.playback.AudioCache.isAvailableOffline(context, trackId)
+
+/**
+ * The round profile picture at the top left of Home and Your Library; it opens the accounts page. It shows the Spotify
+ * profile picture, else the first letter of the Spotify display name, else of the Google account's name.
+ */
+@Composable
+fun ProfileAvatar(model: fr.spotifeur.SpotifeurModel, size: androidx.compose.ui.unit.Dp, onClick: () -> Unit) {
+    val google by model.youTubeAccount.collectAsStateWithLifecycle()
+    val discovery by model.discovery.collectAsStateWithLifecycle()
+    val profile by androidx.compose.runtime.produceState<fr.spotifeur.data.SpotifyProfile?>(null, discovery.spotifyEnabled) {
+        value = if (discovery.spotifyEnabled) fr.spotifeur.data.SpotifyProfiles.current() else null
+    }
+    val picture = profile?.imageUrl ?: google?.photoUrl
+    val initial = (profile?.name ?: google?.name)?.trim()?.firstOrNull { it.isLetterOrDigit() }?.uppercase() ?: "S"
+    Box(Modifier.size(size).clip(CircleShape).background(Color(0xFFE8622C)).quietClick(onClick), contentAlignment = Alignment.Center) {
+        Text(initial, color = Color.Black, fontSize = (size.value * 0.44f).sp, fontWeight = FontWeight.Bold)
+        if (picture != null) Cover(picture, Modifier.fillMaxSize(), CircleShape)
+    }
+}
+
+/**
+ * A track's Canvas: its looping video, muted, filling the screen behind the player like in Spotify. Canvases are
+ * portrait 9:16; the video keeps that ratio and is cropped to the screen rather than stretched.
+ */
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+@Composable
+fun CanvasVideo(url: String, modifier: Modifier = Modifier) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val player = remember(url) {
+        androidx.media3.exoplayer.ExoPlayer.Builder(context).build().apply {
+            volume = 0f
+            repeatMode = androidx.media3.common.Player.REPEAT_MODE_ALL
+            setMediaItem(androidx.media3.common.MediaItem.fromUri(url))
+            prepare(); playWhenReady = true
+        }
+    }
+    androidx.compose.runtime.DisposableEffect(player) { onDispose { player.release() } }
+    Box(modifier.clipToBounds(), contentAlignment = Alignment.Center) {
+        androidx.compose.ui.viewinterop.AndroidView(
+            factory = { android.view.TextureView(it).also(player::setVideoTextureView) },
+            modifier = Modifier.fillMaxHeight().aspectRatioMatchHeight(9f / 16f),
+        )
+    }
+}
+
+private fun Modifier.aspectRatioMatchHeight(ratio: Float): Modifier =
+    this.then(Modifier.wrapContentWidth(unbounded = true).aspectRatio(ratio, matchHeightConstraintsFirst = true))

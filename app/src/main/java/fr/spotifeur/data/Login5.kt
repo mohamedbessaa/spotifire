@@ -179,7 +179,7 @@ internal class Login5(
                         val type = (3..10).firstOrNull { challenge.bytes(it) != null }
                         fr.spotifeur.data.diagnostics.DiagnosticLog.record("login", "unsupported challenge field=${type ?: "unknown"} v$version")
                         throw SpotifyFailure(
-                            if (method == 101) "Spotify asks for a check Spotifeur cannot show. Sign in with a code sent by email instead."
+                            if (method == 101) "Spotify asks for a check Spotifire cannot show. Sign in with a code sent by email instead."
                             else "Spotify requires an Android challenge that is not implemented yet.",
                         )
                     }

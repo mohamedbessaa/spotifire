@@ -35,6 +35,8 @@ internal object AudioGrant {
             return
         }
         DiagnosticLog.record("audio", "key status=$status bitrate=${describe(fileHex)}")
+        // Refused even at the lowest bitrate: this account gets no keys at all, so the engine is no fallback.
+        if (status == 403 && bandwidth != null && bandwidth <= AudioQuality.NORMAL_BANDWIDTH) fr.spotifeur.playback.AudioRoute.engineRefused()
         if (status in 400..499 && status != 429 && bandwidth != null && bandwidth > AudioQuality.NORMAL_BANDWIDTH) {
             SpotifyAccount.current()?.restrictAudioBandwidth(AudioQuality.NORMAL_BANDWIDTH, status)
         }

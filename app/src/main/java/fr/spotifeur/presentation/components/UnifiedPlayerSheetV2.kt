@@ -549,7 +549,7 @@ fun UnifiedPlayerSheetV2(
         currentSheetContentState,
         infrequentPlayerState.currentSong?.title
     ) {
-        "Lecteur Spotifeur ${currentSheetContentState.name.lowercase()} " +
+        "Spotifire player ${currentSheetContentState.name.lowercase()} " +
             (infrequentPlayerState.currentSong?.title ?: "")
     }
 

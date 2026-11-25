@@ -13,6 +13,21 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.rounded.BlurOn
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.SurroundSound
+import androidx.compose.material.icons.rounded.SpatialAudioOff
+import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.SwapHoriz
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.core.graphics.drawable.toBitmap
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.Apps
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -43,7 +58,6 @@ import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material.icons.rounded.UnfoldMore
 import androidx.compose.material.icons.rounded.BlurOff
 import androidx.compose.material.icons.outlined.LightMode
-import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.Logout
@@ -64,6 +78,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.rounded.Speed
+import androidx.compose.material.icons.rounded.FastForward
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -96,95 +113,68 @@ import fr.spotifeur.data.preferences.ThemePreference
 import fr.spotifeur.presentation.navigation.Screen
 import fr.spotifeur.presentation.navigation.navigateSafely
 import fr.spotifeur.ui.theme.GoogleSansRounded
-import fr.spotifeur.utils.AppLocales
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+/** A settings page in BitChord's arrangement: a back button, a large title that scrolls away, then the groups. */
 @Composable
 private fun SettingsScaffold(title: String, navController: NavHostController, content: @Composable ColumnScope.() -> Unit) {
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
-    Scaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
-        topBar = {
-            LargeFlexibleTopAppBar(
-                title = { Text(title, fontFamily = GoogleSansRounded, modifier = Modifier.padding(start = 8.dp)) },
-                navigationIcon = {
-                    FilledTonalIconButton(
-                        modifier = Modifier.padding(start = 10.dp),
-                        colors = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            contentColor = MaterialTheme.colorScheme.onSurface
-                        ),
-                        onClick = { navController.popBackStack() }
-                    ) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.common_back)) }
-                },
-                scrollBehavior = scrollBehavior,
-            )
-        }
-    ) { inner ->
-        Column(
-            Modifier
-                .fillMaxSize()
-                .padding(inner)
-                .verticalScroll(rememberScrollState())
-                // Room for the mini player and the navigation bar under the last item.
-                .padding(PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp,
-                    bottom = 32.dp + fr.spotifeur.presentation.components.MiniPlayerHeight +
-                        androidx.compose.foundation.layout.WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding())),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-            content = content,
-        )
-    }
-}
-
-@Composable
-private fun CategoryRow(title: String, subtitle: String, icon: ImageVector, onClick: () -> Unit) {
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).clickable(onClick = onClick),
+    // The status bar area stays black and still: the page scrolls under it, not through the clock.
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(androidx.compose.ui.graphics.Color.Black)
+            .statusBarsPadding()
+            .clipToBounds()
+            .verticalScroll(rememberScrollState())
+            // Room for the mini player and the navigation bar under the last item.
+            .padding(PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp,
+                bottom = 32.dp + fr.spotifeur.presentation.components.MiniPlayerHeight +
+                    androidx.compose.foundation.layout.WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding())),
     ) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, null, Modifier.size(26.dp), tint = MaterialTheme.colorScheme.primary)
-            Column(Modifier.weight(1f).padding(horizontal = 16.dp)) {
-                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null)
+        androidx.compose.material3.IconButton(onClick = { navController.popBackStack() }) {
+            Icon(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.common_back), tint = MaterialTheme.colorScheme.onBackground)
         }
+        SettingsPageTitle(title)
+        content()
     }
 }
 
 @Composable
 fun SettingsScreen(model: SpotifeurModel, navController: NavHostController) {
     val settings by model.ui.settings.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    fun open(id: String) = navController.navigateSafely(Screen.SettingsCategory.createRoute(id))
+    val glyph: @Composable (ImageVector) -> Unit = { icon -> Icon(icon, null, tint = MaterialTheme.colorScheme.onBackground) }
     SettingsScaffold(stringResource(R.string.common_settings), navController) {
-        SwitchSettingItem(stringResource(R.string.offline_mode_title), stringResource(R.string.offline_mode_description), settings.offlineMode,
-            { enabled -> model.ui.updateSettings { it.copy(offlineMode = enabled) } },
-            leadingIcon = { Icon(Icons.Rounded.Download, null, tint = MaterialTheme.colorScheme.secondary) })
-        fun open(id: String) = navController.navigateSafely(Screen.SettingsCategory.createRoute(id))
-        CategoryRow(stringResource(R.string.settings_category_appearance_title), stringResource(R.string.settings_category_appearance_subtitle), Icons.Rounded.Palette) { open("appearance") }
-        CategoryRow(stringResource(R.string.settings_home_title), stringResource(R.string.settings_home_subtitle), Icons.Rounded.Home) { open("home") }
-        CategoryRow(stringResource(R.string.settings_pages_title), stringResource(R.string.settings_pages_subtitle), Icons.Rounded.Tune) { open("pages") }
-        CategoryRow(stringResource(R.string.settings_category_playback_title), stringResource(R.string.settings_category_playback_subtitle), Icons.Rounded.MusicNote) { open("playback") }
-        CategoryRow(stringResource(R.string.settings_category_behavior_title), stringResource(R.string.settings_category_behavior_subtitle), Icons.Rounded.TouchApp) { open("behavior") }
-        CategoryRow(stringResource(R.string.settings_category_equalizer_title), stringResource(R.string.settings_category_equalizer_subtitle), Icons.Rounded.GraphicEq) { navController.navigateSafely(Screen.Equalizer.route) }
-        CategoryRow(stringResource(R.string.settings_storage_title), stringResource(R.string.settings_storage_subtitle), Icons.Rounded.Storage) { open("storage") }
-        CategoryRow(stringResource(R.string.settings_category_backup_title), stringResource(R.string.settings_category_backup_subtitle), Icons.Rounded.Backup) { open("backup") }
         val discovery by model.discovery.collectAsStateWithLifecycle()
         val google by model.youTubeAccount.collectAsStateWithLifecycle()
-        CategoryRow(stringResource(R.string.settings_accounts_title),
-            listOfNotNull(stringResource(R.string.search_source_spotify).takeIf { discovery.spotifyEnabled },
-                stringResource(R.string.search_source_youtube).takeIf { google != null })
-                .joinToString(" · ").ifEmpty { stringResource(R.string.settings_account_guest_subtitle) },
-            Icons.AutoMirrored.Rounded.Logout) { open("account") }
-        val context = LocalContext.current
-        CategoryRow(stringResource(R.string.update_settings_title),
-            stringResource(R.string.update_installed, fr.spotifeur.BuildConfig.VERSION_NAME),
-            Icons.Rounded.Download) { fr.spotifeur.update.AppUpdater.get(context).check(manual = true) }
-        CategoryRow(stringResource(R.string.diagnostics_title), stringResource(R.string.diagnostics_subtitle),
-            Icons.Rounded.BugReport) { open("diagnostics") }
+        SettingsGroup {
+            SettingsRow(stringResource(R.string.settings_accounts_title),
+                listOfNotNull(stringResource(R.string.search_source_spotify).takeIf { discovery.spotifyEnabled },
+                    stringResource(R.string.search_source_youtube).takeIf { google != null })
+                    .joinToString(" · ").ifEmpty { stringResource(R.string.settings_account_guest_subtitle) },
+                leadingIcon = { glyph(Icons.Rounded.AccountCircle) }, onClick = { open("account") })
+        }
+        SettingsGroup(footer = stringResource(R.string.offline_mode_description)) {
+            SwitchSettingItem(stringResource(R.string.offline_mode_title), "", settings.offlineMode,
+                { enabled -> model.ui.updateSettings { it.copy(offlineMode = enabled) } }, leadingIcon = { glyph(Icons.Rounded.CloudOff) })
+        }
+        SettingsGroup {
+            SettingsRow(stringResource(R.string.settings_category_playback_title), leadingIcon = { glyph(Icons.Outlined.PlayCircle) }, onClick = { open("playback") })
+            SettingsRow(stringResource(R.string.settings_sound_title), stringResource(R.string.settings_sound_subtitle), leadingIcon = { glyph(Icons.Rounded.SurroundSound) }, onClick = { open("sound") })
+            SettingsRow(stringResource(R.string.settings_category_equalizer_title), leadingIcon = { glyph(Icons.Rounded.GraphicEq) }, onClick = { navController.navigateSafely(Screen.Equalizer.route) })
+        }
+        SettingsGroup {
+            SettingsRow(stringResource(R.string.settings_category_appearance_title), leadingIcon = { glyph(Icons.Rounded.Palette) }, onClick = { open("appearance") })
+            SettingsRow(stringResource(R.string.settings_app_icon_title), value = stringResource(fr.spotifeur.AppIcon.current(context).labelRes),
+                leadingIcon = { glyph(Icons.Rounded.Apps) }, onClick = { open("icon") })
+        }
+        SettingsGroup {
+            SettingsRow(stringResource(R.string.settings_storage_title), leadingIcon = { glyph(Icons.Rounded.Storage) }, onClick = { open("storage") })
+            SettingsRow(stringResource(R.string.settings_category_backup_title), leadingIcon = { glyph(Icons.Rounded.Backup) }, onClick = { open("backup") })
+        }
     }
 }
 
@@ -201,6 +191,8 @@ fun SettingsCategoryScreen(model: SpotifeurModel, navController: NavHostControll
         "home" -> HomeSettings(model, navController)
         "pages" -> PageActionsSettings(model, navController)
         "diagnostics" -> DiagnosticsSettings(model, navController)
+        "icon" -> AppIconSettings(navController)
+        "sound" -> SoundSettings(model, navController)
     }
 }
 
@@ -208,100 +200,19 @@ fun SettingsCategoryScreen(model: SpotifeurModel, navController: NavHostControll
 private fun AppearanceSettings(model: SpotifeurModel, navController: NavHostController) {
     val ui = model.ui
     val s by ui.settings.collectAsStateWithLifecycle()
-    val context = LocalContext.current
     val update = ui::updateSettings
+    // Only what the Spotifire screens read. The Spotifeur interface's options (blur, navbar, collage, carousel...)
+    // stay in AppSettings for old backups but have nothing to change here.
     SettingsScaffold(stringResource(R.string.settings_category_appearance_title), navController) {
-        SettingsSection(title = stringResource(R.string.settings_global_theme_section), icon = {}) {
-            ThemeSelectorItem(
-                label = stringResource(R.string.settings_app_language_title), description = "",
-                options = mapOf(
-                    AppSettings.LANGUAGE_SYSTEM to stringResource(R.string.settings_language_system),
-                    "fr" to "Français", "en" to "English",
-                ),
-                selectedKey = s.language,
-                onSelectionChanged = { key -> update { it.copy(language = key) }; AppLocales.apply(context, key) },
-                leadingIcon = { Icon(Icons.Outlined.Language, null, tint = MaterialTheme.colorScheme.secondary) },
-            )
-            ThemeSelectorItem(
-                label = stringResource(R.string.settings_app_theme_title), description = "",
-                options = mapOf(
-                    AppSettings.THEME_SYSTEM to stringResource(R.string.settings_language_system),
-                    AppSettings.THEME_LIGHT to stringResource(R.string.settings_theme_light),
-                    AppSettings.THEME_DARK to stringResource(R.string.settings_theme_dark),
-                ),
-                selectedKey = s.themeMode,
-                onSelectionChanged = { key -> update { it.copy(themeMode = key) } },
-                leadingIcon = { Icon(Icons.Outlined.LightMode, null, tint = MaterialTheme.colorScheme.secondary) },
-            )
-            SwitchSettingItem(stringResource(R.string.settings_smooth_corners_title), stringResource(R.string.settings_smooth_corners_subtitle), s.useSmoothCorners, { v -> update { it.copy(useSmoothCorners = v) } }, leadingIcon = { Icon(painterResource(R.drawable.rounded_rounded_corner_24), null, tint = MaterialTheme.colorScheme.secondary) })
-            SwitchSettingItem(stringResource(R.string.settings_disable_blur_all_over_title), stringResource(R.string.settings_disable_blur_all_over_subtitle), s.disableBlur, { v -> update { it.copy(disableBlur = v) } }, leadingIcon = { Icon(Icons.Rounded.BlurOff, null, tint = MaterialTheme.colorScheme.secondary) })
-            SwitchSettingItem(stringResource(R.string.settings_show_scrollbar_title), stringResource(R.string.settings_show_scrollbar_subtitle), s.showScrollbar, { v -> update { it.copy(showScrollbar = v) } }, leadingIcon = { Icon(Icons.Rounded.UnfoldMore, null, tint = MaterialTheme.colorScheme.secondary) })
-        }
-        SettingsSection(title = stringResource(R.string.settings_lists_section), icon = {}) {
-            SwitchSettingItem(stringResource(R.string.settings_compact_lists_title), stringResource(R.string.settings_compact_lists_subtitle), s.compactLists, { v -> update { it.copy(compactLists = v) } }, leadingIcon = { Icon(painterResource(R.drawable.rounded_view_week_24), null, tint = MaterialTheme.colorScheme.secondary) })
-            SwitchSettingItem(stringResource(R.string.settings_source_badges_title), stringResource(R.string.settings_source_badges_subtitle), s.showSourceBadges, { v -> update { it.copy(showSourceBadges = v) } }, leadingIcon = { Icon(Icons.Outlined.Style, null, tint = MaterialTheme.colorScheme.secondary) })
-        }
-        SettingsSection(title = stringResource(R.string.settings_now_playing_section), icon = {}) {
-            ThemeSelectorItem(
-                label = stringResource(R.string.settings_player_theme_title), description = "",
-                options = mapOf(
-                    ThemePreference.ALBUM_ART to stringResource(R.string.settings_player_theme_album),
-                    ThemePreference.GLOBAL to stringResource(R.string.settings_player_theme_app),
-                ),
-                selectedKey = s.playerTheme,
-                onSelectionChanged = { key -> update { it.copy(playerTheme = key) } },
-                leadingIcon = { Icon(Icons.Outlined.PlayCircle, null, tint = MaterialTheme.colorScheme.secondary) },
-            )
-            ThemeSelectorItem(
-                label = stringResource(R.string.settings_album_art_palette_title), description = "",
-                options = AlbumArtPaletteStyle.entries.associate { it.storageKey to it.label },
-                selectedKey = s.palette,
-                onSelectionChanged = { key -> update { it.copy(palette = key) } },
-                leadingIcon = { Icon(Icons.Outlined.Style, null, tint = MaterialTheme.colorScheme.secondary) },
-            )
-            ThemeSelectorItem(
-                label = stringResource(R.string.settings_carousel_style_title), description = "",
-                options = mapOf(
-                    CarouselStyle.NO_PEEK to stringResource(R.string.settings_carousel_none),
-                    CarouselStyle.ONE_PEEK to stringResource(R.string.settings_carousel_one),
-                    CarouselStyle.TWO_PEEK to stringResource(R.string.settings_carousel_two),
-                ),
-                selectedKey = s.carouselStyle,
-                onSelectionChanged = { key -> update { it.copy(carouselStyle = key) } },
-                leadingIcon = { Icon(painterResource(R.drawable.rounded_view_carousel_24), null, tint = MaterialTheme.colorScheme.secondary) },
-            )
+        SettingsGroup(header = stringResource(R.string.settings_now_playing_section)) {
+            SwitchSettingItem(stringResource(R.string.settings_canvas_title), stringResource(R.string.settings_canvas_subtitle), s.canvas, { v -> update { it.copy(canvas = v) } }, leadingIcon = { Icon(Icons.Outlined.PlayCircle, null, tint = MaterialTheme.colorScheme.secondary) })
             SwitchSettingItem(stringResource(R.string.settings_show_player_file_info_title), stringResource(R.string.settings_show_player_file_info_subtitle), s.showPlayerFileInfo, { v -> update { it.copy(showPlayerFileInfo = v) } }, leadingIcon = { Icon(painterResource(R.drawable.rounded_attach_file_24), null, tint = MaterialTheme.colorScheme.secondary) })
-            SwitchSettingItem(stringResource(R.string.settings_quality_lists_title), stringResource(R.string.settings_quality_lists_subtitle), s.showQualityInLists, { v -> update { it.copy(showQualityInLists = v) } }, leadingIcon = { Icon(painterResource(R.drawable.outline_high_quality_24), null, tint = MaterialTheme.colorScheme.secondary) })
-            SwitchSettingItem(stringResource(R.string.settings_player_menu_title), stringResource(R.string.settings_player_menu_subtitle), s.showPlayerMenuButton, { v -> update { it.copy(showPlayerMenuButton = v) } }, leadingIcon = { Icon(Icons.Rounded.MoreVert, null, tint = MaterialTheme.colorScheme.secondary) })
         }
-        SettingsSection(title = stringResource(R.string.settings_home_collage_section), icon = {}) {
-            ThemeSelectorItem(
-                label = stringResource(R.string.settings_collage_pattern_title), description = "",
-                options = CollagePattern.entries.associate { it.storageKey to it.label },
-                selectedKey = s.collagePattern,
-                onSelectionChanged = { key -> update { it.copy(collagePattern = key) } },
-                leadingIcon = { Icon(painterResource(R.drawable.rounded_view_column_24), null, tint = MaterialTheme.colorScheme.secondary) },
-            )
-            SwitchSettingItem(stringResource(R.string.settings_auto_rotate_patterns_title), stringResource(R.string.settings_auto_rotate_patterns_subtitle), s.collageAutoRotate, { v -> update { it.copy(collageAutoRotate = v) } }, leadingIcon = { Icon(painterResource(R.drawable.rounded_shuffle_24), null, tint = MaterialTheme.colorScheme.secondary) })
+        SettingsGroup(header = stringResource(R.string.settings_group_look), footer = stringResource(R.string.settings_glass_footer)) {
+            SwitchSettingItem(stringResource(R.string.settings_glass_title), stringResource(R.string.settings_glass_subtitle), s.glassBars,
+                { v -> update { it.copy(glassBars = v) } }, leadingIcon = { Icon(Icons.Rounded.BlurOn, null, tint = MaterialTheme.colorScheme.secondary) })
         }
-        SettingsSection(title = stringResource(R.string.settings_navigation_bar_section), icon = {}) {
-            ThemeSelectorItem(
-                label = stringResource(R.string.settings_navbar_style_title), description = "",
-                options = mapOf(
-                    NavBarStyle.DEFAULT to stringResource(R.string.settings_navbar_floating),
-                    NavBarStyle.FULL_WIDTH to stringResource(R.string.settings_navbar_full),
-                ),
-                selectedKey = s.navBarStyle,
-                onSelectionChanged = { key -> update { it.copy(navBarStyle = key) } },
-                leadingIcon = { Icon(Icons.Outlined.Style, null, tint = MaterialTheme.colorScheme.secondary) },
-            )
-            SwitchSettingItem(stringResource(R.string.settings_compact_mode_title), stringResource(R.string.settings_compact_mode_subtitle), s.navBarCompact, { v -> update { it.copy(navBarCompact = v) } }, leadingIcon = { Icon(painterResource(R.drawable.rounded_view_week_24), null, tint = MaterialTheme.colorScheme.secondary) })
-            SliderSettingsItem(
-                label = stringResource(R.string.settings_navbar_corner_title),
-                value = s.navBarCornerRadius.toFloat(), valueRange = 0f..50f, steps = 49,
-                onValueChange = { v -> update { it.copy(navBarCornerRadius = v.toInt()) } },
-                valueText = { "${it.toInt()} dp" },
-            )
+        SettingsGroup(header = stringResource(R.string.settings_group_start)) {
             ThemeSelectorItem(
                 label = stringResource(R.string.settings_default_tab_title), description = "",
                 options = mapOf(
@@ -314,8 +225,7 @@ private fun AppearanceSettings(model: SpotifeurModel, navController: NavHostCont
                 leadingIcon = { Icon(painterResource(R.drawable.tab_24), null, tint = MaterialTheme.colorScheme.secondary) },
             )
         }
-        SettingsSection(title = stringResource(R.string.settings_lyrics_screen_section), icon = {}) {
-            SwitchSettingItem(stringResource(R.string.settings_immersive_lyrics_title), stringResource(R.string.settings_immersive_lyrics_subtitle), s.immersiveLyrics, { v -> update { it.copy(immersiveLyrics = v) } }, leadingIcon = { Icon(painterResource(R.drawable.rounded_lyrics_24), null, tint = MaterialTheme.colorScheme.secondary) })
+        SettingsGroup(header = stringResource(R.string.settings_lyrics_screen_section)) {
             SwitchSettingItem(stringResource(R.string.settings_lyrics_fallback_title), stringResource(R.string.settings_lyrics_fallback_subtitle), s.lyricsFallback, { v -> update { it.copy(lyricsFallback = v) } }, leadingIcon = { Icon(painterResource(R.drawable.rounded_lyrics_24), null, tint = MaterialTheme.colorScheme.secondary) })
         }
     }
@@ -331,14 +241,15 @@ private fun PlaybackSettings(model: SpotifeurModel, navController: NavHostContro
             fr.spotifeur.data.AudioQuality.NORMAL.key to stringResource(R.string.audio_quality_normal),
             fr.spotifeur.data.AudioQuality.VERY_HIGH.key to stringResource(R.string.audio_quality_very_high),
         )
+        SettingsGroup(header = stringResource(R.string.settings_group_quality), footer = stringResource(R.string.settings_quality_description)) {
         ThemeSelectorItem(
-            label = stringResource(R.string.settings_quality_wifi_title), description = stringResource(R.string.settings_quality_description),
+            label = stringResource(R.string.settings_quality_wifi_title), description = "",
             options = streaming, selectedKey = fr.spotifeur.data.AudioQuality.of(s.streamingQualityWifi).key,
             onSelectionChanged = { key -> update { it.copy(streamingQualityWifi = key) } },
             leadingIcon = { Icon(Icons.Rounded.Wifi, null, tint = MaterialTheme.colorScheme.secondary) },
         )
         ThemeSelectorItem(
-            label = stringResource(R.string.settings_quality_mobile_title), description = stringResource(R.string.settings_quality_description),
+            label = stringResource(R.string.settings_quality_mobile_title), description = "",
             options = streaming, selectedKey = fr.spotifeur.data.AudioQuality.of(s.streamingQualityMobile).key,
             onSelectionChanged = { key -> update { it.copy(streamingQualityMobile = key) } },
             leadingIcon = { Icon(Icons.Rounded.SignalCellularAlt, null, tint = MaterialTheme.colorScheme.secondary) },
@@ -350,12 +261,43 @@ private fun PlaybackSettings(model: SpotifeurModel, navController: NavHostContro
             onSelectionChanged = { key -> update { it.copy(downloadQuality = key) } },
             leadingIcon = { Icon(Icons.Rounded.Download, null, tint = MaterialTheme.colorScheme.secondary) },
         )
-        SwitchSettingItem(stringResource(R.string.settings_normalization_title), stringResource(R.string.settings_normalization_subtitle), s.audioNormalization, { v -> update { it.copy(audioNormalization = v) } }, leadingIcon = { Icon(Icons.Rounded.GraphicEq, null, tint = MaterialTheme.colorScheme.secondary) })
+        }
+        SettingsGroup(header = stringResource(R.string.settings_group_sound)) {
+        ThemeSelectorItem(
+            label = stringResource(R.string.settings_volume_level_title), description = stringResource(R.string.settings_volume_level_subtitle),
+            options = linkedMapOf("off" to stringResource(R.string.settings_volume_level_off), "quiet" to stringResource(R.string.settings_volume_level_quiet),
+                "normal" to stringResource(R.string.settings_volume_level_normal), "loud" to stringResource(R.string.settings_volume_level_loud)),
+            selectedKey = s.normalizationLevel,
+            onSelectionChanged = { key -> update { it.copy(normalizationLevel = key) } },
+            leadingIcon = { Icon(Icons.Rounded.GraphicEq, null, tint = MaterialTheme.colorScheme.secondary) },
+        )
+        SwitchSettingItem(stringResource(R.string.settings_automix_title), stringResource(R.string.settings_automix_subtitle), s.automix,
+            { v -> update { it.copy(automix = v) } }, leadingIcon = { Icon(Icons.Rounded.AutoAwesome, null, tint = MaterialTheme.colorScheme.secondary) })
+        if (!s.automix) SliderSettingsItem(
+            label = stringResource(R.string.settings_crossfade_title),
+            value = s.crossfadeSeconds.toFloat(), valueRange = 0f..12f, steps = 11,
+            leadingIcon = { Icon(Icons.Rounded.SwapHoriz, null, tint = MaterialTheme.colorScheme.secondary) },
+            onValueChange = { v -> update { it.copy(crossfadeSeconds = Math.round(v)) } },
+            valueText = { if (it < 0.5f) "Off" else "${Math.round(it)} s" },
+        )
+        SwitchSettingItem(stringResource(R.string.settings_skip_silence_title), stringResource(R.string.settings_skip_silence_subtitle), s.skipSilence, { v -> update { it.copy(skipSilence = v) } }, leadingIcon = { Icon(Icons.Rounded.FastForward, null, tint = MaterialTheme.colorScheme.secondary) })
+        SliderSettingsItem(
+            label = stringResource(R.string.settings_playback_speed_title),
+            value = s.playbackSpeed, valueRange = 0.5f..2f, steps = 29,
+            leadingIcon = { Icon(Icons.Rounded.Speed, null, tint = MaterialTheme.colorScheme.secondary) },
+            // Round to the 0.05 grid so the stored value stays clean.
+            onValueChange = { v -> update { it.copy(playbackSpeed = Math.round(v * 20f) / 20f) } },
+            valueText = { "${"%.2f".format(java.util.Locale.US, it).trimEnd('0').trimEnd('.')}×" },
+        )
+        if (s.playbackSpeed != 1f) SettingsRow(stringResource(R.string.settings_playback_speed_reset), onClick = { update { it.copy(playbackSpeed = 1f) } })
+        SwitchSettingItem(stringResource(R.string.settings_keep_pitch_title), stringResource(R.string.settings_keep_pitch_subtitle), s.keepPitch, { v -> update { it.copy(keepPitch = v) } }, leadingIcon = { Icon(Icons.Rounded.Tune, null, tint = MaterialTheme.colorScheme.secondary) })
+        }
+        SettingsGroup(header = stringResource(R.string.settings_group_listening)) {
         SwitchSettingItem(stringResource(R.string.settings_keep_playing_title), stringResource(R.string.settings_keep_playing_subtitle), s.keepPlayingInBackground, { v -> update { it.copy(keepPlayingInBackground = v) } }, leadingIcon = { Icon(Icons.Rounded.MusicNote, null, tint = MaterialTheme.colorScheme.secondary) })
         SwitchSettingItem(stringResource(R.string.settings_pause_on_volume_zero), stringResource(R.string.settings_pause_on_volume_zero_desc), s.pauseOnVolumeZero, { v -> update { it.copy(pauseOnVolumeZero = v) } }, leadingIcon = { Icon(painterResource(R.drawable.rounded_volume_down_24), null, tint = MaterialTheme.colorScheme.secondary) })
         SwitchSettingItem(stringResource(R.string.settings_headphones_resume_title), stringResource(R.string.settings_headphones_resume_subtitle), s.resumeOnHeadphones, { v -> update { it.copy(resumeOnHeadphones = v) } }, leadingIcon = { Icon(painterResource(R.drawable.rounded_headphones_24), null, tint = MaterialTheme.colorScheme.secondary) })
         SwitchSettingItem(stringResource(R.string.settings_persistent_shuffle_title), stringResource(R.string.settings_persistent_shuffle_subtitle), s.persistentShuffle, { v -> update { it.copy(persistentShuffle = v) } }, leadingIcon = { Icon(painterResource(R.drawable.rounded_shuffle_24), null, tint = MaterialTheme.colorScheme.secondary) })
-        SwitchSettingItem(stringResource(R.string.settings_show_queue_history_title), stringResource(R.string.settings_show_queue_history_subtitle), s.showQueueHistory, { v -> update { it.copy(showQueueHistory = v) } }, leadingIcon = { Icon(painterResource(R.drawable.rounded_queue_music_24), null, tint = MaterialTheme.colorScheme.secondary) })
+        }
     }
 }
 
@@ -363,7 +305,7 @@ private fun PlaybackSettings(model: SpotifeurModel, navController: NavHostContro
 private fun BehaviorSettings(model: SpotifeurModel, navController: NavHostController) {
     val s by model.ui.settings.collectAsStateWithLifecycle()
     val update = model.ui::updateSettings
-    SettingsScaffold(stringResource(R.string.settings_category_behavior_title), navController) {
+    SettingsScaffold(stringResource(R.string.settings_category_behavior_title), navController) { SettingsGroup {
         SwitchSettingItem(stringResource(R.string.settings_tap_bg_closes_title), stringResource(R.string.settings_tap_bg_closes_subtitle), s.tapBackgroundClosesPlayer, { v -> update { it.copy(tapBackgroundClosesPlayer = v) } }, leadingIcon = { Icon(painterResource(R.drawable.rounded_touch_app_24), null, tint = MaterialTheme.colorScheme.secondary) })
         SwitchSettingItem(stringResource(R.string.settings_haptic_feedback_title), stringResource(R.string.settings_haptic_feedback_subtitle), s.hapticsEnabled, { v -> update { it.copy(hapticsEnabled = v) } }, leadingIcon = { Icon(painterResource(R.drawable.rounded_touch_app_24), null, tint = MaterialTheme.colorScheme.secondary) })
         run {
@@ -399,13 +341,13 @@ private fun BehaviorSettings(model: SpotifeurModel, navController: NavHostContro
             onSelectionChanged = { key -> update { it.copy(miniPlayerSwipe = key) } },
             leadingIcon = { Icon(Icons.Rounded.SwipeLeft, null, tint = MaterialTheme.colorScheme.secondary) },
         )
-    }
+    } }
 }
 
 internal fun formatSize(bytes: Long): String = when {
-    bytes >= 1L shl 30 -> String.format(java.util.Locale.getDefault(), "%.1f Go", bytes / (1L shl 30).toDouble())
-    bytes >= 1L shl 20 -> String.format(java.util.Locale.getDefault(), "%.0f Mo", bytes / (1L shl 20).toDouble())
-    else -> "${bytes / 1024} Ko"
+    bytes >= 1L shl 30 -> String.format(java.util.Locale.US, "%.1f GB", bytes / (1L shl 30).toDouble())
+    bytes >= 1L shl 20 -> String.format(java.util.Locale.US, "%.0f MB", bytes / (1L shl 20).toDouble())
+    else -> "${bytes / 1024} KB"
 }
 
 @Composable
@@ -426,7 +368,7 @@ private fun StorageSettings(model: SpotifeurModel, navController: NavHostControl
         imageBytes = withContext(Dispatchers.IO) { context.imageLoader.diskCache?.size ?: 0L }
         downloadBytes = withContext(Dispatchers.IO) { model.ui.downloadsSizeBytes() }
     }
-    SettingsScaffold(stringResource(R.string.settings_storage_title), navController) {
+    SettingsScaffold(stringResource(R.string.settings_storage_title), navController) { SettingsGroup {
         SettingsItem(
             title = stringResource(R.string.audio_cache_title),
             subtitle = stringResource(R.string.audio_cache_usage, formatSize(audioBytes), formatSize(settings.audioCacheLimitMb * 1024L * 1024L)),
@@ -472,7 +414,7 @@ private fun StorageSettings(model: SpotifeurModel, navController: NavHostControl
             primaryActionLabel = stringResource(R.string.common_clear),
             onPrimaryAction = { model.ui.removeAllDownloads() },
         )
-    }
+    } }
 }
 
 @Composable
@@ -495,7 +437,7 @@ private fun DiagnosticsSettings(model: SpotifeurModel, navController: NavHostCon
             onPrimaryAction = {
                 val text = report ?: return@ActionSettingsItem
                 val send = android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/plain")
-                    .putExtra(android.content.Intent.EXTRA_SUBJECT, "Spotifeur diagnostic report")
+                    .putExtra(android.content.Intent.EXTRA_SUBJECT, "Spotifire diagnostic report")
                     .putExtra(android.content.Intent.EXTRA_TEXT, text)
                 context.startActivity(android.content.Intent.createChooser(send, chooser))
             },
@@ -503,7 +445,7 @@ private fun DiagnosticsSettings(model: SpotifeurModel, navController: NavHostCon
             onSecondaryAction = {
                 val text = report ?: return@ActionSettingsItem
                 context.getSystemService(android.content.ClipboardManager::class.java)
-                    ?.setPrimaryClip(android.content.ClipData.newPlainText("Spotifeur diagnostic report", text))
+                    ?.setPrimaryClip(android.content.ClipData.newPlainText("Spotifire diagnostic report", text))
                 Toast.makeText(context, copied, Toast.LENGTH_SHORT).show()
             },
             enabled = report != null,
@@ -549,7 +491,7 @@ private fun BackupSettings(model: SpotifeurModel, navController: NavHostControll
             Toast.makeText(context, if (ok) restored else failed, Toast.LENGTH_SHORT).show()
         }
     }
-    SettingsScaffold(stringResource(R.string.settings_category_backup_title), navController) {
+    SettingsScaffold(stringResource(R.string.settings_category_backup_title), navController) { SettingsGroup {
         ActionSettingsItem(
             title = stringResource(R.string.settings_export_backup_title),
             subtitle = stringResource(R.string.backup_export_subtitle),
@@ -564,7 +506,7 @@ private fun BackupSettings(model: SpotifeurModel, navController: NavHostControll
             primaryActionLabel = stringResource(R.string.backup_import_action),
             onPrimaryAction = { importLauncher.launch(arrayOf("application/json")) },
         )
-    }
+    } }
 }
 
 @Composable
@@ -732,6 +674,88 @@ private fun PageActionsSettings(model: SpotifeurModel, navController: NavHostCon
         }
         androidx.compose.material3.TextButton(onClick = { model.ui.updateSettings { it.copy(albumActions = "", playlistActions = "") } }, modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(R.string.settings_pages_reset))
+        }
+    }
+}
+
+/** BitChord's home-screen icons, and Spotifire's own: tap one and the launcher shows it. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun AppIconSettings(navController: NavHostController) {
+    val context = LocalContext.current
+    var current by remember { mutableStateOf(fr.spotifeur.AppIcon.current(context)) }
+    val green = androidx.compose.ui.graphics.Color(0xFF1ED760)
+    SettingsScaffold(stringResource(R.string.settings_app_icon_title), navController) {
+        Text(stringResource(R.string.settings_app_icon_footer), style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp))
+        androidx.compose.foundation.layout.FlowRow(
+            Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(16.dp),
+            maxItemsInEachRow = 4,
+        ) {
+            fr.spotifeur.AppIcon.entries.forEach { icon ->
+                val selected = icon == current
+                Column(
+                    Modifier.weight(1f).clip(RoundedCornerShape(16.dp)).clickable {
+                        if (!selected) { fr.spotifeur.AppIcon.apply(context, icon); current = icon }
+                    }.padding(vertical = 6.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    // Adaptive icons are not something painterResource can read: draw the drawable the launcher draws.
+                    val preview = remember(icon) {
+                        androidx.core.content.res.ResourcesCompat.getDrawable(context.resources, icon.previewRes ?: icon.iconRes, context.theme)
+                            ?.let { androidx.compose.ui.graphics.painter.BitmapPainter(it.toBitmap(192, 192).asImageBitmap()) }
+                    }
+                    if (preview != null) androidx.compose.foundation.Image(
+                        painter = preview, contentDescription = stringResource(icon.labelRes),
+                        // Full adaptive icons fill their canvas; the glass and neon foregrounds carry their own margin.
+                        modifier = Modifier.size(64.dp).padding(if (icon.previewRes == null) 7.dp else 0.dp).clip(RoundedCornerShape(14.dp))
+                            .then(if (selected) Modifier.border(2.dp, green, RoundedCornerShape(16.dp)) else Modifier),
+                    )
+                    Text(stringResource(icon.labelRes), style = MaterialTheme.typography.labelSmall, maxLines = 2,
+                        color = if (selected) green else MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.padding(top = 6.dp))
+                }
+            }
+        }
+    }
+}
+
+/** BitChord's immersive sound, in the player's own chain: dimensional stereo, tone, headphone correction, Atmos. */
+@Composable
+private fun SoundSettings(model: SpotifeurModel, navController: NavHostController) {
+    val s by model.ui.settings.collectAsStateWithLifecycle()
+    val update = model.ui::updateSettings
+    val context = LocalContext.current
+    val headphone by fr.spotifeur.playback.dsp.SoundRuntime.headphone.collectAsStateWithLifecycle()
+    fun db(v: Float) = Math.round(v).let { if (it > 0) "+$it dB" else if (it == 0) "0 dB" else "$it dB" }
+    SettingsScaffold(stringResource(R.string.settings_sound_title), navController) {
+        SettingsGroup(footer = stringResource(R.string.settings_spatial_footer)) {
+            SwitchSettingItem(stringResource(R.string.settings_spatial_title), stringResource(R.string.settings_spatial_subtitle), s.spatialAudio,
+                { v -> update { it.copy(spatialAudio = v) } }, leadingIcon = { Icon(Icons.Rounded.SurroundSound, null, tint = MaterialTheme.colorScheme.secondary) })
+            SettingsRow(stringResource(R.string.settings_atmos_title), stringResource(R.string.settings_atmos_subtitle),
+                leadingIcon = { Icon(Icons.Rounded.SpatialAudioOff, null, tint = MaterialTheme.colorScheme.secondary) }, onClick = {
+                    val panel = android.content.Intent(android.media.audiofx.AudioEffect.ACTION_DISPLAY_AUDIO_EFFECT_CONTROL_PANEL)
+                        .putExtra(android.media.audiofx.AudioEffect.EXTRA_CONTENT_TYPE, android.media.audiofx.AudioEffect.CONTENT_TYPE_MUSIC)
+                        .putExtra(android.media.audiofx.AudioEffect.EXTRA_PACKAGE_NAME, context.packageName)
+                    runCatching { context.startActivity(panel) }.onFailure {
+                        Toast.makeText(context, context.getString(R.string.settings_atmos_missing), Toast.LENGTH_SHORT).show()
+                    }
+                })
+        }
+        SettingsGroup(header = stringResource(R.string.settings_tone_header), footer = stringResource(R.string.settings_tone_footer)) {
+            SliderSettingsItem(stringResource(R.string.settings_tone_bass), s.toneBass.toFloat(), -6f..6f, 11,
+                { v -> update { it.copy(toneBass = Math.round(v)) } }, leadingIcon = { Icon(Icons.Rounded.GraphicEq, null, tint = MaterialTheme.colorScheme.secondary) }, valueText = ::db)
+            SliderSettingsItem(stringResource(R.string.settings_tone_treble), s.toneTreble.toFloat(), -6f..6f, 11,
+                { v -> update { it.copy(toneTreble = Math.round(v)) } }, leadingIcon = { Icon(Icons.Rounded.GraphicEq, null, tint = MaterialTheme.colorScheme.secondary) }, valueText = ::db)
+            SliderSettingsItem(stringResource(R.string.settings_tone_dynamic), s.toneDynamic.toFloat(), 0f..6f, 5,
+                { v -> update { it.copy(toneDynamic = Math.round(v)) } }, leadingIcon = { Icon(Icons.Rounded.Bolt, null, tint = MaterialTheme.colorScheme.secondary) },
+                valueText = { if (it < 0.5f) "Off" else Math.round(it).toString() })
+        }
+        SettingsGroup(header = stringResource(R.string.settings_headphone_header), footer = stringResource(R.string.settings_headphone_footer)) {
+            SwitchSettingItem(stringResource(R.string.settings_headphone_title),
+                headphone?.let { stringResource(R.string.settings_headphone_matched, it) } ?: stringResource(R.string.settings_headphone_none),
+                s.headphoneEq, { v -> update { it.copy(headphoneEq = v) } },
+                leadingIcon = { Icon(painterResource(R.drawable.rounded_headphones_24), null, tint = MaterialTheme.colorScheme.secondary) })
         }
     }
 }

@@ -11,7 +11,6 @@ import org.json.JSONObject
 /** Every user-facing preference of the app. Never holds account material. */
 data class AppSettings(
     val themeMode: String = THEME_SYSTEM,
-    val language: String = LANGUAGE_SYSTEM,
     val useSmoothCorners: Boolean = true,
     val disableBlur: Boolean = false,
     val showScrollbar: Boolean = true,
@@ -57,20 +56,42 @@ data class AppSettings(
     val streamingQualityWifi: String = "auto",
     val streamingQualityMobile: String = "auto",
     val downloadQuality: String = "very_high",
-    /** Loudness normalization of Spotify and YouTube Music tracks from the loudness each service publishes. */
-    val audioNormalization: Boolean = false,
+    /** Volume level: "off", "quiet" (-23 LUFS), "normal" (-14) or "loud" (-11), from the loudness each service publishes. */
+    val normalizationLevel: String = "normal",
     /** The ⋮ button at the top right of the full player. */
     val showPlayerMenuButton: Boolean = true,
     /** Horizontal swipe on the mini player: [MINI_SWIPE_TRACKS], [MINI_SWIPE_DISMISS] or [MINI_SWIPE_OFF]. */
     val miniPlayerSwipe: String = MINI_SWIPE_TRACKS,
     /** The Spotify / YouTube / Device choice above search results. Hidden: every search reads all sources. */
     val showSearchSources: Boolean = false,
+    /** Leave out silent parts inside tracks. */
+    val skipSilence: Boolean = false,
+    /** Playback speed, 0.5 to 2.0. */
+    val playbackSpeed: Float = 1f,
+    /** Keep the pitch when the speed changes. */
+    val keepPitch: Boolean = true,
+    /** Seconds the end of a track overlaps the next one; 0 plays them back to back (gapless). */
+    val crossfadeSeconds: Int = 0,
+    /** Dimensional sound: a wider stereo image with a little cross-feed. */
+    val spatialAudio: Boolean = false,
+    /** Tone, in dB: bass and treble shelves, and the "Dynamic" contour (0 to 6). */
+    val toneBass: Int = 0,
+    val toneTreble: Int = 0,
+    val toneDynamic: Int = 0,
+    /** Correct the connected headphones with their AutoEq profile. */
+    val headphoneEq: Boolean = false,
+    /** Play a track's Canvas (its looping video) behind the player. */
+    val canvas: Boolean = true,
+    /** Automix: blend into the next song where this one winds down. */
+    val automix: Boolean = false,
+    /** Frosted glass under the mini player and the tabs, instead of solid black. */
+    val glassBars: Boolean = false,
 ) {
     fun actions(page: DetailPage): List<ActionSlot> =
         DetailActions.decode(page, if (page == DetailPage.ALBUM) albumActions else playlistActions)
     val homeLayout: List<ShelfConfig> get() = HomeLayout.decode(homeShelves)
     fun toJson(): JSONObject = JSONObject()
-        .put("themeMode", themeMode).put("language", language).put("useSmoothCorners", useSmoothCorners)
+        .put("themeMode", themeMode).put("useSmoothCorners", useSmoothCorners)
         .put("disableBlur", disableBlur).put("showScrollbar", showScrollbar).put("playerTheme", playerTheme)
         .put("palette", palette).put("carouselStyle", carouselStyle).put("showPlayerFileInfo", showPlayerFileInfo)
         .put("showQualityInLists", showQualityInLists).put("collagePattern", collagePattern)
@@ -87,15 +108,17 @@ data class AppSettings(
         .put("albumActions", albumActions).put("playlistActions", playlistActions)
         .put("swipeRight", swipeRight).put("swipeLeft", swipeLeft)
         .put("streamingQualityWifi", streamingQualityWifi).put("streamingQualityMobile", streamingQualityMobile)
-        .put("downloadQuality", downloadQuality).put("audioNormalization", audioNormalization)
+        .put("downloadQuality", downloadQuality).put("normalizationLevel", normalizationLevel)
         .put("showPlayerMenuButton", showPlayerMenuButton).put("miniPlayerSwipe", miniPlayerSwipe)
-        .put("showSearchSources", showSearchSources)
+        .put("showSearchSources", showSearchSources).put("skipSilence", skipSilence)
+        .put("playbackSpeed", playbackSpeed.toDouble()).put("keepPitch", keepPitch).put("crossfadeSeconds", crossfadeSeconds)
+            .put("spatialAudio", spatialAudio).put("toneBass", toneBass).put("toneTreble", toneTreble)
+            .put("toneDynamic", toneDynamic).put("headphoneEq", headphoneEq).put("canvas", canvas).put("automix", automix).put("glassBars", glassBars)
 
     companion object {
         const val THEME_SYSTEM = "system"
         const val THEME_LIGHT = "light"
         const val THEME_DARK = "dark"
-        const val LANGUAGE_SYSTEM = "system"
         const val TAB_HOME = "home"
         const val TAB_SEARCH = "search"
         const val TAB_LIBRARY = "library"
@@ -108,7 +131,6 @@ data class AppSettings(
             val d = AppSettings()
             return AppSettings(
                 themeMode = json.optString("themeMode", d.themeMode),
-                language = json.optString("language", d.language),
                 useSmoothCorners = json.optBoolean("useSmoothCorners", d.useSmoothCorners),
                 disableBlur = json.optBoolean("disableBlur", d.disableBlur),
                 showScrollbar = json.optBoolean("showScrollbar", d.showScrollbar),
@@ -148,11 +170,23 @@ data class AppSettings(
                 streamingQualityWifi = json.optString("streamingQualityWifi", d.streamingQualityWifi),
                 streamingQualityMobile = json.optString("streamingQualityMobile", d.streamingQualityMobile),
                 downloadQuality = json.optString("downloadQuality", d.downloadQuality),
-                audioNormalization = json.optBoolean("audioNormalization", d.audioNormalization),
+                // Older files stored a boolean: on meant the -14 LUFS level.
+                normalizationLevel = json.optString("normalizationLevel", "").takeIf { it in setOf("off", "quiet", "normal", "loud") }
+                    ?: if (json.has("audioNormalization")) (if (json.optBoolean("audioNormalization")) "normal" else "off") else d.normalizationLevel,
                 showPlayerMenuButton = json.optBoolean("showPlayerMenuButton", d.showPlayerMenuButton),
                 miniPlayerSwipe = json.optString("miniPlayerSwipe", d.miniPlayerSwipe)
                     .takeIf { it in setOf(MINI_SWIPE_TRACKS, MINI_SWIPE_DISMISS, MINI_SWIPE_OFF) } ?: d.miniPlayerSwipe,
                 showSearchSources = json.optBoolean("showSearchSources", d.showSearchSources),
+                skipSilence = json.optBoolean("skipSilence", d.skipSilence),
+                playbackSpeed = json.optDouble("playbackSpeed", d.playbackSpeed.toDouble()).toFloat().coerceIn(0.5f, 2f),
+                keepPitch = json.optBoolean("keepPitch", d.keepPitch),
+                crossfadeSeconds = json.optInt("crossfadeSeconds", d.crossfadeSeconds).coerceIn(0, 12),
+                spatialAudio = json.optBoolean("spatialAudio", d.spatialAudio),
+                toneBass = json.optInt("toneBass", 0).coerceIn(-6, 6), toneTreble = json.optInt("toneTreble", 0).coerceIn(-6, 6),
+                toneDynamic = json.optInt("toneDynamic", 0).coerceIn(0, 6), headphoneEq = json.optBoolean("headphoneEq", d.headphoneEq),
+                canvas = json.optBoolean("canvas", d.canvas),
+                automix = json.optBoolean("automix", d.automix),
+                glassBars = json.optBoolean("glassBars", d.glassBars),
             )
         }
     }

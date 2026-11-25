@@ -386,6 +386,12 @@ No. Spotify's Canvas videos are not supported. The cover and its color glow take
 - Libraries: [AndroidX Media3](https://github.com/androidx/media),
   [Jetpack Compose](https://developer.android.com/compose), [OkHttp](https://square.github.io/okhttp/),
   [Coil](https://coil-kt.github.io/coil/) and [LRCLIB](https://lrclib.net) for lyrics.
+- **[BitChord](https://github.com/kushagrasinghx/BitChord)** by kushagrasinghx (GPL-3.0): the app icon set,
+  the settings layout, the dimensional (spatial) processor, the loudness limiter, the two-player crossfade idea
+  and the lyrics providers' approach.
+- [Monochrome](https://github.com/monochrome-music/monochrome) (Apache-2.0) track service for exact-ISRC copies,
+  [AutoEq](https://github.com/jaakkopasanen/AutoEq) (MIT) headphone profiles, [LyricsPlus](https://github.com/ibratabian17/YouLyPlus)
+  word-synced lyrics, [Haze](https://github.com/chrisbanes/haze) (Apache-2.0) for the frosted bars.
 
 ## License
 

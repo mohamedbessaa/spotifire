@@ -105,7 +105,7 @@
     <string name="login_with_google">Sign in with Google</string>
     <string name="spotify_google_title">Sign in with Google</string>
     <string name="spotify_google_failed">Google did not complete the sign-in. Try again.</string>
-    <string name="share_item">Share %1$s</string>
+    <string name="share_item">Send %1$s to friends</string>
     <string name="no_tracks_for">No tracks to play for “%1$s”.</string>
     <string name="code_prompt_email">Code sent to %1$s</string>
     <string name="audio_cache_title">Recent audio cache</string>
@@ -128,7 +128,7 @@
     <string name="playlist_sort">Sort tracks</string>
     <string name="playlist_sort_reversed">Reversed order</string>
     <string name="offline_mode_title">Offline mode</string>
-    <string name="offline_mode_description">Play music on this device and pause Spotifeur network connections.</string>
+    <string name="offline_mode_description">Play music on this device and pause Spotifire network connections.</string>
     <string name="audio_cache_entire_queue">Preload the entire queue</string>
     <string name="audio_cache_entire_queue_description">Keep complete tracks within the cache size limit. Downloads are protected from cache cleanup.</string>
     <string name="audio_cache_mobile">Preload on mobile data</string>
@@ -180,7 +180,7 @@
     <string name="playlist_export_csv">Export as CSV</string>
     <string name="playlist_exported">Playlist exported</string>
     <string name="playlist_import">Import a playlist</string>
-    <string name="import_from_file">CSV file exported by Spotifeur</string>
+    <string name="import_from_file">CSV file exported by Spotifire</string>
     <string name="import_from_link">YouTube, YouTube Music or Spotify link</string>
     <string name="import_link_label">Playlist link</string>
     <string name="import_action">Import</string>
@@ -222,7 +222,7 @@
     <string name="playlist_add_tracks">Add tracks</string>
     <string name="playlist_export_csv_short">Export CSV</string>
     <string name="detail_more_actions">More actions</string>
-    <string name="detail_share">Share</string>
+    <string name="detail_share">Send to friends</string>
     <string name="detail_edit">Edit</string>
     <string name="playlist_reorder_hint">Drag the tracks to reorder them.</string>
     <string name="playlist_reorder_done">Done</string>
@@ -246,16 +246,16 @@
     <string name="settings_quality_wifi_title">Streaming quality on Wi-Fi</string>
     <string name="settings_quality_mobile_title">Streaming quality on mobile data</string>
     <string name="settings_quality_download_title">Download quality</string>
-    <string name="settings_quality_description">Automatic: up to 256 kbit/s, or 128 kbit/s on a metered network. Playback uses the quality available to your Spotify account.</string>
+    <string name="settings_quality_description">Automatic picks Very high on Wi-Fi and Normal on a metered network. On a Spotify Free account, Spotify tracks play from their best copy, up to lossless.</string>
     <string name="settings_quality_download_description">Applies to new downloads. A track already on the device plays from its stored copy.</string>
     <string name="audio_quality_auto">Automatic</string>
-    <string name="audio_quality_normal">Normal (AAC 128 kbit/s)</string>
-    <string name="audio_quality_very_high">Very high (up to AAC 256 kbit/s)</string>
+    <string name="audio_quality_normal">Normal (128 kbit/s)</string>
+    <string name="audio_quality_very_high">Very high</string>
     <string name="history_title">Listening history</string>
     <string name="history_today">Today</string>
     <string name="history_yesterday">Yesterday</string>
-    <string name="history_empty">Tracks you play in Spotifeur, and those Spotify reports from your other apps, appear here.</string>
-    <string name="history_clear">Clear Spotifeur history</string>
+    <string name="history_empty">Tracks you play in Spotifire, and those Spotify reports from your other apps, appear here.</string>
+    <string name="history_clear">Clear Spotifire history</string>
     <string name="history_clear_message">Removes the plays recorded on this device. Spotify\'s own history is not changed.</string>
     <string name="history_clear_confirm">Clear</string>
     <string name="login_optional">Optional</string>
@@ -263,7 +263,7 @@
     <string name="action_ok">OK</string>
     <string name="settings_accounts_title">Accounts</string>
     <string name="google_connect_title">Connect a Google account</string>
-    <string name="google_connect_subtitle">Your YouTube Music playlists in Spotifeur, synced with the account.</string>
+    <string name="google_connect_subtitle">Your YouTube Music playlists in Spotifire, synced with the account.</string>
     <string name="google_connected_subtitle">Google account</string>
     <string name="google_disconnect_title">Disconnect the Google account</string>
     <string name="google_disconnect_subtitle">Removes the session from this device. Your playlists stay on YouTube Music.</string>

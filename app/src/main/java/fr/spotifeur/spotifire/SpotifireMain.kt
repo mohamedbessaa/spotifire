@@ -40,9 +40,11 @@ import fr.spotifeur.SpotifeurModel
 import fr.spotifeur.data.preferences.AppSettings
 import fr.spotifeur.presentation.navigation.Screen
 import fr.spotifeur.presentation.navigation.navigateSafely
+import fr.spotifeur.presentation.navigation.openMusic
 import fr.spotifeur.presentation.navigation.navigateToTopLevelSafely
 import fr.spotifeur.presentation.viewmodel.PlayerSheetState
 import fr.spotifeur.spotifire.components.SpotifyBottomArea
+import dev.chrisbanes.haze.hazeSource
 import fr.spotifeur.spotifire.screens.SpotifireAccountsScreen
 import fr.spotifeur.spotifire.screens.SpotifireAlbumScreen
 import fr.spotifeur.spotifire.screens.SpotifireArtistScreen
@@ -59,6 +61,7 @@ import java.net.URLDecoder
 object SpotifireRoutes {
     const val ACCOUNTS = "spotifire_accounts"
     const val DOWNLOADS = "spotifire_downloads"
+    const val FRIENDS = "spotifire_friends"
 }
 
 /** Routes that look like settings pages: no tabs there, as in Spotify. */
@@ -92,21 +95,44 @@ fun SpotifireMain(model: SpotifeurModel) {
     // "Go to artist" / "Go to album" from the player and the track menus.
     LaunchedEffect(Unit) { ui.artistNavigationRequests.collect { ui.collapsePlayerSheet(); navController.navigateSafely(Screen.ArtistDetail.createRoute(it)) } }
     LaunchedEffect(Unit) { ui.albumNavigationRequests.collect { ui.collapsePlayerSheet(); navController.navigateSafely(Screen.AlbumDetail.createRoute(it)) } }
+    LaunchedEffect(Unit) { ui.sharedOpens.collect { ui.collapsePlayerSheet(); navController.openMusic(ui, it) } }
+    // A Friends notification was tapped.
+    LaunchedEffect(Unit) { fr.spotifeur.social.Social.openFriends.collect {
+        fr.spotifeur.social.Social.openFriends.resetReplayCache()
+        ui.collapsePlayerSheet(); navController.navigateToTopLevelSafely(SpotifireRoutes.FRIENDS)
+    } }
+    // Updates from GitHub releases: checked once per launch, offered once per launch; Later waits for the next one.
+    val context = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(Unit) { fr.spotifeur.update.AppUpdateChecker.clearCache(context); fr.spotifeur.update.AppUpdateChecker.check() }
+    val update by fr.spotifeur.update.AppUpdateChecker.available.collectAsStateWithLifecycle()
+    var updateDismissed by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    update?.takeIf { !updateDismissed }?.let { info -> fr.spotifeur.spotifire.components.UpdatePopup(info) { updateDismissed = true } }
+    val sending by ui.sendRequests.collectAsStateWithLifecycle()
+    sending?.let { (item, mode) ->
+        fr.spotifeur.spotifire.friends.SendToFriendsSheet(model, item, mode,
+            onOpenFriends = { ui.collapsePlayerSheet(); navController.navigateToTopLevelSafely(SpotifireRoutes.FRIENDS) },
+            onDismiss = { ui.closeSend() })
+    }
 
     val showTabs = route !in routesWithoutTabs && !(route == Screen.Search.route && typing)
     // Room left under lists for the mini player and the tabs.
     val bottomPadding = (if (showTabs) 72 else 16) + (if (hasSong) 72 else 0) + 24
 
+    val glass = ui.settings.collectAsStateWithLifecycle().value.glassBars
+    val haze = remember { dev.chrisbanes.haze.HazeState() }
     Box(Modifier.fillMaxSize().background(SpotifyColors.Background)) {
-        SpotifireNavHost(model, navController, bottomPadding) { typing = it }
+        Box(Modifier.fillMaxSize().then(if (glass) Modifier.hazeSource(haze) else Modifier)) {
+            SpotifireNavHost(model, navController, bottomPadding) { typing = it }
+        }
         val online by model.online.collectAsStateWithLifecycle()
         val offlineMode = ui.settings.collectAsStateWithLifecycle().value.offlineMode
         Box(Modifier.align(Alignment.BottomCenter)) {
             androidx.compose.foundation.layout.Column {
                 if (!online && route != SpotifireRoutes.DOWNLOADS) OfflineBanner(offlineMode) { navController.navigateSafely(SpotifireRoutes.DOWNLOADS) }
+                fr.spotifeur.spotifire.friends.JamBar { navController.navigateToTopLevelSafely(SpotifireRoutes.FRIENDS) }
                 SpotifyBottomArea(ui, route, showTabs, onTab = { tab ->
                 if (route == tab) navController.popBackStack(tab, inclusive = false) else navController.navigateToTopLevelSafely(tab)
-            }, onOpenPlayer = { ui.expandPlayerSheet() })
+            }, onOpenPlayer = { ui.expandPlayerSheet() }, haze = haze.takeIf { glass })
             }
         }
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = (bottomPadding - 16).dp)) { data ->
@@ -141,6 +167,7 @@ private fun SpotifireNavHost(model: SpotifeurModel, navController: NavHostContro
         composable(Screen.Home.route) { SpotifireHomeScreen(model, navController, bottomPadding) }
         composable(Screen.Search.route) { SpotifireSearchScreen(model, navController, bottomPadding, onTyping) }
         composable(Screen.Library.route) { SpotifireLibraryScreen(model, navController, bottomPadding) }
+        composable(SpotifireRoutes.FRIENDS) { fr.spotifeur.spotifire.friends.SpotifireFriendsScreen(model, navController, bottomPadding) }
         composable(SpotifireRoutes.ACCOUNTS) { SpotifireAccountsScreen(model, navController) }
         composable(SpotifireRoutes.DOWNLOADS) { fr.spotifeur.spotifire.screens.SpotifireDownloadsScreen(model, navController, bottomPadding) }
         composable(Screen.PlaylistDetail.route, arguments = listOf(navArgument("playlistId") { type = NavType.StringType })) { entry ->

@@ -1,5 +1,6 @@
 package fr.spotifeur
 
+import fr.spotifeur.presentation.utils.spotifyShareUrl
 import android.app.Application
 import androidx.core.content.edit
 import androidx.lifecycle.AndroidViewModel
@@ -474,6 +475,7 @@ class SpotifeurModel(private val app: Application) : AndroidViewModel(app) {
         }
         refreshLocalTracks()
         refreshYouTubeLibrary()
+        fr.spotifeur.social.SocialBridge.install(this, viewModelScope)
         viewModelScope.launch {
             // One history entry each time a queue position starts playing.
             var counted: String? = null
@@ -851,6 +853,40 @@ class SpotifeurModel(private val app: Application) : AndroidViewModel(app) {
         ui.register(music)
         mutableDetails.update { it + (id to DetailUi(CatalogDetail(music, playlist.tracks))) }
     }
+    private val mutableMixes = MutableStateFlow<List<Music>>(emptyList())
+    /** "Made for you": one mix per artist you play most, built from Spotify radio, like Spotify's Daily Mixes. */
+    val homeMixes: kotlinx.coroutines.flow.StateFlow<List<Music>> = mutableMixes.asStateFlow()
+    private var mixesAt = 0L
+
+    fun loadHomeMixes() {
+        val source = radio ?: return
+        if (System.currentTimeMillis() - mixesAt < MIXES_TTL_MS && mutableMixes.value.isNotEmpty()) return
+        mixesAt = System.currentTimeMillis()
+        viewModelScope.launch {
+            // Seeds: liked songs first, then what was played, one track per lead artist.
+            val pool = (mutableLibrary.value.content?.savedTracks.orEmpty() + mutableRecent.value.filter { it.kind == MusicKind.Track })
+                .filter { it.id.startsWith("spotify:track:") }
+            val seeds = pool.distinctBy { it.subtitle.substringBefore(",").trim().lowercase() }.take(MIX_COUNT)
+            val mixes = seeds.mapIndexedNotNull { index, seed ->
+                val station = try { source.station(seed) } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { null }
+                    ?: return@mapIndexedNotNull null
+                if (station.tracks.size < 5) return@mapIndexedNotNull null
+                val artist = seed.subtitle.substringBefore(",").trim()
+                val others = station.tracks.map { it.subtitle.substringBefore(",").trim() }.filter { it.isNotBlank() && !it.equals(artist, true) }.distinct().take(2)
+                val item = station.item.copy(
+                    title = "$artist Mix",
+                    subtitle = (listOf(artist) + others).joinToString(", ") + " and more",
+                    imageUrl = station.tracks.firstOrNull { it.imageUrl != null }?.imageUrl ?: station.item.imageUrl,
+                    note = "mix:${index + 1}",
+                )
+                mutableDetails.update { it + (item.id to DetailUi(station.copy(item = item))) }
+                ui.register(item)
+                item
+            }
+            if (mixes.isNotEmpty()) mutableMixes.value = mixes
+        }
+    }
+
     fun loadRadio(seed: Music, open: (Music) -> Unit) {
         val source = radio ?: return
         viewModelScope.launch {
@@ -1217,6 +1253,8 @@ class SpotifeurModel(private val app: Application) : AndroidViewModel(app) {
         )
         collections = SpotifyLibrary(transport, session, requireNotNull(catalog))
         radio = SpotifyRadio(transport, session)
+        // Smart Shuffle draws its recommendations from the playing track's radio.
+        player.recommend = { seed -> radio?.station(seed)?.tracks.orEmpty() }
         remote = SpotifySearch(transport, session)
         lyrics = SpotifyLyricsSource(transport, session)
         mutableDiscovery.update { it.copy(spotifyEnabled = true) }
@@ -1298,7 +1336,7 @@ class SpotifeurModel(private val app: Application) : AndroidViewModel(app) {
         vault.clear()
         viewModelScope.launch(Dispatchers.IO) { store.clear() }
         remote = null
-        catalog = null; collections = null; radio = null; lyrics = null
+        catalog = null; collections = null; radio = null; lyrics = null; player.recommend = null
         mutableDetails.value = emptyMap()
         savedIds.value = emptySet(); mutableRecent.value = emptyList()
         if (mutableGuest.value) installLibrary(emptyLibrary(), false) else mutableLibrary.value = LibraryUi()
@@ -1498,6 +1536,32 @@ class SpotifeurModel(private val app: Application) : AndroidViewModel(app) {
         return createImported(imported.name, completeSpotifyTracks(imported.tracks))
     }
 
+    // Friends ---------------------------------------------------------------------------------------------------
+
+    /** Sends [item] to friends inside the app; a playlist takes its songs along (never files from this phone). */
+    suspend fun sendToFriends(item: Music, to: List<String>, note: String) {
+        val tracks = if (item.kind == MusicKind.Playlist) tracksOf(item).filterNot { it.isLocalTrack } else emptyList()
+        if (item.kind == MusicKind.Playlist && tracks.isEmpty()) throw IllegalArgumentException("This playlist has no songs a friend can play.")
+        fr.spotifeur.social.Social.share(to, fr.spotifeur.social.SharedItems.encode(item, tracks), note)
+    }
+
+    /**
+     * Keeps what a friend sent: a playlist is copied into the library, a song is liked and an album or artist followed
+     * (pinned instead when there is no account to save it to). Returns the new playlist, if one was made.
+     */
+    fun saveShared(shared: fr.spotifeur.social.SharedMusic): Music? {
+        val item = shared.item
+        if (shared.tracks.isNotEmpty()) return createImported(item.title, shared.tracks)
+        val likeable = item.kind == MusicKind.Track && item.isYouTubeTrack ||
+            collections != null && item.id.startsWith("spotify:") && item.kind in setOf(MusicKind.Track, MusicKind.Album, MusicKind.Artist)
+        when {
+            likeable && item.isYouTubeTrack -> if (youTubeLikes.value.none { it.id == item.id }) toggleFavorite(item)
+            likeable -> if (item.id !in savedIds.value) toggleFavorite(item)
+            pins.value.none { it.id == item.id } -> togglePin(item)
+        }
+        return null
+    }
+
     /** A YouTube, YouTube Music or Spotify playlist link, copied as a multi-service playlist. */
     suspend fun importLink(link: String): Music {
         fr.spotifeur.data.youtube.youTubePlaylistId(link)?.let { id ->
@@ -1537,6 +1601,8 @@ class SpotifeurModel(private val app: Application) : AndroidViewModel(app) {
     companion object {
         const val LIKED_SONGS = "spotify:collection:tracks"
         private const val YOUTUBE_PAGE_TTL_MS = 24L * 60 * 60 * 1000
+        private const val MIXES_TTL_MS = 6L * 60 * 60 * 1000
+        private const val MIX_COUNT = 4
         private const val SEARCH_DEBOUNCE_MS = 250L
         const val TRACKS_SPOTIFY = "spotify"
         const val TRACKS_YOUTUBE = "youtube"

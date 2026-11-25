@@ -61,6 +61,27 @@ class LyricsRepository(context: Context) {
         return try { source.fetch(song.id)?.also { store(song.id, it.toStoredText()) } } catch (_: SpotifyFailure) { null }
     }
 
+    /**
+     * Word-by-word lyrics from LyricsPlus (the YouLyPlus backend BitChord reads, with Apple Music's syllable timing).
+     * Mirrors are tried in turn; the answer is kept as enhanced LRC (`<mm:ss.xx>word`), which the cache and the
+     * parser already read.
+     */
+    suspend fun fromLyricsPlus(song: Song): Lyrics? {
+        if (song.isLocal) return null
+        for (host in LYRICS_PLUS) {
+            val body = runCatching {
+                get("$host/v2/lyrics/get".toHttpUrl().newBuilder().addQueryParameter("title", song.title)
+                    .addQueryParameter("artist", song.artist).addQueryParameter("album", song.album)
+                    .addQueryParameter("duration", (song.duration / 1000).toString()).build().toString())
+            }.getOrNull() ?: continue
+            val lrc = runCatching { lyricsPlusToLrc(JSONObject(body)) }.getOrNull() ?: continue
+            val lyrics = LyricsUtils.parseLyrics(lrc).takeIf { hasContent(it) && it.synced?.any { line -> !line.words.isNullOrEmpty() } == true } ?: continue
+            store(song.id, lrc)
+            return lyrics
+        }
+        return null
+    }
+
     /** The exact LRCLIB lookup first, then its text search, keeping results close in duration. */
     suspend fun fromLrcLib(song: Song): Lyrics? {
         val seconds = (song.duration / 1000).toInt()
@@ -111,3 +132,28 @@ private fun Lyrics.toStoredText(): String = synced?.joinToString("\n") { line ->
     val hundredths = line.time % 1000 / 10
     String.format(java.util.Locale.ROOT, "[%02d:%02d.%02d]%s", minutes, seconds, hundredths, line.line)
 } ?: plain.orEmpty().joinToString("\n")
+
+private val LYRICS_PLUS = listOf("https://lyricsplus.binimum.org", "https://lyricsplus.prjktla.my.id", "https://lyricsplus.atomix.one")
+
+private fun lrcTime(ms: Long): String = String.format(java.util.Locale.ROOT, "%02d:%02d.%02d", ms / 60_000, ms / 1000 % 60, ms % 1000 / 10)
+
+/** A LyricsPlus answer as enhanced LRC; null when it has no word timing (a line-only answer adds nothing here). */
+internal fun lyricsPlusToLrc(root: JSONObject): String? {
+    val lines = root.optJSONArray("lyrics") ?: return null
+    val out = StringBuilder()
+    var words = 0
+    for (i in 0 until lines.length()) {
+        val line = lines.optJSONObject(i) ?: continue
+        val syllables = line.optJSONArray("syllabus")
+        // Background vocals are marked; the lead line is what is sung over the music.
+        if (line.optJSONObject("element")?.optBoolean("isBackground") == true) continue
+        if (syllables == null || syllables.length() == 0) continue
+        val lead = (0 until syllables.length()).mapNotNull { syllables.optJSONObject(it) }.filterNot { it.optBoolean("isBackground") }
+        if (lead.isEmpty()) continue
+        out.append('[').append(lrcTime(lead.first().optLong("time"))).append(']')
+        lead.forEach { syllable -> out.append('<').append(lrcTime(syllable.optLong("time"))).append('>').append(syllable.optString("text")) }
+        out.append('\n')
+        words += lead.size
+    }
+    return out.toString().takeIf { words > 0 }
+}

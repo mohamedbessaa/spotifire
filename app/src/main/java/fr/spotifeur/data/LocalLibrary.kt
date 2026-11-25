@@ -160,6 +160,12 @@ class LocalPlaylistStore(context: Context) {
         else playlist.copy(tracks = playlist.tracks.toMutableList().apply { add(to, removeAt(from)) })
     }
     fun replaceAll(items: List<LocalPlaylist>) = write(items)
+    /** Adds or replaces the playlist with this id (shared playlists and Blends kept in step with their friends). */
+    fun put(playlist: LocalPlaylist) {
+        val current = mutable.value
+        if (current.any { it.id == playlist.id }) change(playlist.id) { it.copy(name = playlist.name, tracks = playlist.tracks) }
+        else write(listOf(playlist) + current)
+    }
 
     private fun change(id: String, update: (LocalPlaylist) -> LocalPlaylist) =
         write(mutable.value.map { if (it.id == id) update(it) else it })

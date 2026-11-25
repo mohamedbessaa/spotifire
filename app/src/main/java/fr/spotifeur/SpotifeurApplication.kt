@@ -16,7 +16,11 @@ class SpotifeurApplication : Application(), ImageLoaderFactory {
         NetworkMonitor.start(this)
         fr.spotifeur.data.youtube.YouTubeMusic.init(this)
         fr.spotifeur.data.youtube.TrackMatcher.init(this)
+        fr.spotifeur.data.sources.CopyResolver.init(this)
+        fr.spotifeur.data.sources.CopyResolver.applyUpgrades(this)
         fr.spotifeur.data.youtube.YouTubeAccount.init(this)
+        fr.spotifeur.playback.AudioRoute.init(this)
+        fr.spotifeur.social.Social.init(this)
     }
 
     /** Covers stay on disk whatever the CDN's cache headers say: they never change for a given address. */

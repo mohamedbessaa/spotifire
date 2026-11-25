@@ -104,7 +104,7 @@ object ConversionMatching {
     const val CONFIDENT = 0.8
     const val ACCEPTED = 0.55
 
-    fun query(track: Music) = MatchQuery(track.id, songTitle(track), track.subtitle, track.durationMs, track.album)
+    fun query(track: Music) = MatchQuery(track.id, songTitle(track), track.subtitle, track.durationMs, track.album, isrc = track.isrc)
 
     /**
      * The song title of a YouTube video title: "Artist - Title (Official Video)", "Title | Film | Cast",

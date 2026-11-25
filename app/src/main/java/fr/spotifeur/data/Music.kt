@@ -22,6 +22,8 @@ data class Music(
     /** Known audio format, shown when the quality setting is on. */
     val quality: String = "",
     val ownerUsername: String? = null,
+    /** International Standard Recording Code from Spotify metadata, used to find the same recording elsewhere. */
+    val isrc: String? = null,
 )
 
 /** Where a track's audio comes from. */

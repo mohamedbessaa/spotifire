@@ -16,6 +16,9 @@ import fr.spotifeur.data.AudioIndex
 import fr.spotifeur.data.Music
 import fr.spotifeur.data.YOUTUBE_FILE_PREFIX
 import fr.spotifeur.data.isLocalTrack
+import fr.spotifeur.data.sources.Copy
+import fr.spotifeur.data.sources.CopyResolver
+import fr.spotifeur.data.sources.MonochromeTracks
 import fr.spotifeur.data.youtube.MatchQuery
 import fr.spotifeur.data.youtube.TrackMatcher
 import fr.spotifeur.data.youtube.YouTubeFailure
@@ -36,10 +39,12 @@ internal object YouTubeUris {
     /** The address that plays [track] from YouTube Music, or null when it plays another way. */
     fun of(track: Music, spotifySignedIn: Boolean): Uri? {
         track.youTubeVideoId?.let { return Uri.parse("$SCHEME://track/$it") }
-        if (spotifySignedIn || track.isLocalTrack || !track.id.startsWith("spotify:track:")) return null
+        if (!AudioRoute.viaCopy(track, spotifySignedIn)) return null
         return Uri.Builder().scheme(SCHEME).authority("match").appendPath(track.id)
             .appendQueryParameter("title", track.title).appendQueryParameter("artists", track.subtitle)
             .appendQueryParameter("duration", track.durationMs.toString()).appendQueryParameter("album", track.album)
+            .apply { track.isrc?.let { appendQueryParameter("isrc", it) } }
+            .apply { if (spotifySignedIn) appendQueryParameter("strict", "1") }
             .build()
     }
 
@@ -63,6 +68,7 @@ internal object YouTubeUris {
         return MatchQuery(
             key = id, title = uri.getQueryParameter("title").orEmpty(), artists = uri.getQueryParameter("artists").orEmpty(),
             durationMs = uri.getQueryParameter("duration")?.toIntOrNull() ?: 0, album = uri.getQueryParameter("album").orEmpty(),
+            isrc = uri.getQueryParameter("isrc"), strict = uri.getQueryParameter("strict") == "1",
         )
     }
 }
@@ -76,7 +82,7 @@ internal object YouTubeUris {
 internal class YouTubeDataSource private constructor(private val context: Context) : BaseDataSource(true) {
     class Factory(context: Context) : DataSource.Factory {
         private val app = context.applicationContext
-        init { YouTubeMusic.init(app); TrackMatcher.init(app) }
+        init { YouTubeMusic.init(app); TrackMatcher.init(app); CopyResolver.init(app) }
         override fun createDataSource(): DataSource = YouTubeDataSource(app)
     }
 
@@ -97,8 +103,18 @@ internal class YouTubeDataSource private constructor(private val context: Contex
         val trackId = YouTubeUris.trackId(uri) ?: throw IOException("Unknown YouTube Music address.")
         val videoId = when (uri.authority) {
             "track" -> checkNotNull(uri.lastPathSegment)
-            else -> YouTubeUris.matchQuery(uri)?.let(TrackMatcher::resolve)
-                ?: throw YouTubeFailure("This track was not found on YouTube Music.", "NO_MATCH")
+            else -> when (val copy = YouTubeUris.matchQuery(uri)?.let(CopyResolver::resolve)) {
+                is Copy.YouTube -> copy.videoId
+                is Copy.Monochrome -> try { return openDirect(dataSpec, trackId, copy) } catch (failure: IOException) {
+                    // Nothing of this copy is kept yet: the next copy can take its place under the same key.
+                    val kept = AudioCache.cache(context).getCachedBytes(YouTubeUris.cacheKey(trackId), 0, Long.MAX_VALUE) +
+                        DownloadCenter.cache(context).getCachedBytes(YouTubeUris.cacheKey(trackId), 0, Long.MAX_VALUE)
+                    android.util.Log.i("SpotifeurCopy", "$trackId monochrome failed (${failure.javaClass.simpleName}: ${failure.message}) kept=$kept")
+                    if (kept > 0) throw failure
+                    YouTubeUris.matchQuery(uri)?.let(CopyResolver::demote)?.videoId ?: throw failure
+                }
+                null -> throw YouTubeFailure("No copy of this track was found.", "NO_MATCH")
+            }
         }
         position = dataSpec.position
         requestEnd = if (dataSpec.length != C.LENGTH_UNSET.toLong()) dataSpec.position + dataSpec.length else UNSET
@@ -129,6 +145,27 @@ internal class YouTubeDataSource private constructor(private val context: Contex
             }
         }
         throw failure ?: YouTubeFailure("The audio of this track could not be opened.")
+    }
+
+    /** Reads a copy served with plain byte ranges, in the same bounded ranges as YouTube Music. */
+    private fun openDirect(dataSpec: DataSpec, trackId: String, copy: Copy.Monochrome): Long {
+        position = dataSpec.position
+        requestEnd = if (dataSpec.length != C.LENGTH_UNSET.toLong()) dataSpec.position + dataSpec.length else UNSET
+        resourceEnd = UNSET
+        stream = YouTubeStream(copy.id, MonochromeTracks.streamUrl(copy.id), "", "monochrome", 0L, "audio/mp4",
+            MonochromeTracks.BITRATE.toLong(), 44_100, Long.MAX_VALUE)
+        delegate = OkHttpDataSource.Factory(MonochromeTracks.http).createDataSource()
+        try { openNextRange() } catch (failure: IOException) {
+            delegate?.close(); delegate = null
+            throw if (failure is HttpDataSource.InvalidResponseCodeException)
+                YouTubeFailure("The copy of this track could not be opened (HTTP ${failure.responseCode}).", "COPY_REFUSED")
+            else failure
+        }
+        if (resourceEnd != UNSET) AudioIndex.get(context).attachDirectFile(trackId, AudioFileRecord(YouTubeUris.fileHex(trackId), resourceEnd, ""))
+        opened = true
+        transferStarted(dataSpec)
+        val end = knownEnd()
+        return if (end == UNSET) C.LENGTH_UNSET.toLong() else end - dataSpec.position
     }
 
     override fun read(buffer: ByteArray, offset: Int, length: Int): Int {

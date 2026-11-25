@@ -22,16 +22,18 @@ import fr.spotifeur.spotifire.theme.SpotifireTheme
 import fr.spotifeur.data.model.Song
 import fr.spotifeur.presentation.components.subcomps.LocalTrackQuality
 import fr.spotifeur.ui.theme.LocalShowScrollbar
-import fr.spotifeur.utils.AppLocales
 
 class MainActivity : ComponentActivity() {
-    override fun attachBaseContext(newBase: Context) = super.attachBaseContext(AppLocales.wrap(newBase))
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // The app is visible: the only moment the Friends foreground service may start.
+        fr.spotifeur.social.SocialService.apply(this)
+        openFriendsIfAsked(intent)
         setContent {
             val model: SpotifeurModel = viewModel()
+            // A link a friend sent: opened with Spotifire, or shared to it.
+            LaunchedEffect(Unit) { sharedText(intent)?.let(model.ui::openSharedLink) }
             val settings by model.ui.settings.collectAsStateWithLifecycle()
             val downloads by model.ui.downloadCollections.collectAsStateWithLifecycle()
             val notifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
@@ -88,5 +90,26 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        openFriendsIfAsked(intent)
+        sharedText(intent)?.let { text -> androidx.lifecycle.ViewModelProvider(this)[SpotifeurModel::class.java].ui.openSharedLink(text) }
+    }
+
+    /** A Friends notification was tapped. */
+    private fun openFriendsIfAsked(intent: android.content.Intent?) {
+        if (intent?.getBooleanExtra(fr.spotifeur.social.SocialNotifier.EXTRA_OPEN_FRIENDS, false) == true) {
+            intent.removeExtra(fr.spotifeur.social.SocialNotifier.EXTRA_OPEN_FRIENDS)
+            fr.spotifeur.social.Social.openFriends.tryEmit(Unit)
+        }
+    }
+
+    private fun sharedText(intent: android.content.Intent?): String? = when (intent?.action) {
+        android.content.Intent.ACTION_VIEW -> intent.dataString
+        android.content.Intent.ACTION_SEND -> intent.getStringExtra(android.content.Intent.EXTRA_TEXT)
+        else -> null
     }
 }

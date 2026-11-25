@@ -1,5 +1,8 @@
 package fr.spotifeur.presentation.components
 
+import androidx.compose.material.icons.rounded.Headphones
+import androidx.compose.material.icons.rounded.RemoveCircleOutline
+import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
@@ -7,7 +10,6 @@ import androidx.compose.material.icons.rounded.Radio
 import androidx.compose.material.icons.rounded.Shuffle
 import fr.spotifeur.data.Music
 import fr.spotifeur.data.MusicKind
-import fr.spotifeur.presentation.utils.shareMusic
 import fr.spotifeur.presentation.utils.spotifyShareUrl
 import android.app.Activity
 import android.content.ActivityNotFoundException
@@ -149,66 +151,68 @@ fun SongInfoBottomSheet(
     val spotifyPages = song.source == fr.spotifeur.data.MusicSource.Spotify && discovery.spotifyEnabled
     // Albums and artists open on Spotify with an account, on YouTube Music otherwise (issue #8).
     val catalogPages = !song.isLocal
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp)
-                .navigationBarsPadding(),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            OptionsSheetHeader(song.albumArtUriString, song.title, song.displayArtist)
-            Row1Actions(
-                isFavorite = isFavorite,
-                onPlaySong = { onPlaySong(); onDismiss() },
-                // YouTube Music tracks are liked on the device (and on the Google account when there is one).
-                onToggleFavorite = if (spotifyPages || song.source == fr.spotifeur.data.MusicSource.YouTubeMusic) onToggleFavorite else null,
-                onShareClick = if (song.isLocal) null else ({ context.shareMusic(song.toMusic()) }),
-                playButtonShape = OptionsPlayButtonShape,
-                evenCornerRadiusElems = 26.dp
-            )
-            Row2Actions(onAddToQueue = onAddToQueue, onAddNextToQueue = onAddNextToQueue)
-            RadioAndPinRow(
-                item = song.toMusic(),
-                playerViewModel = playerViewModel,
-                onStartRadio = if (spotifyPages) onStartRadio else null,
-            )
-            onRemoveFromPlaylist?.let { remove ->
-                TextButton(onClick = { remove(); onDismiss() }, modifier = Modifier.fillMaxWidth()) {
-                    Text(stringResource(R.string.playlist_remove_track))
+    // Spotify's track menu: the track at the top, then one plain row per action.
+    val pins by playerViewModel.model.pins.collectAsStateWithLifecycle()
+    val downloads by playerViewModel.downloadCollections.collectAsStateWithLifecycle()
+    val preparations by playerViewModel.downloadPreparations.collectAsStateWithLifecycle()
+    val music = song.toMusic()
+    var addingToPlaylist by remember { mutableStateOf(false) }
+    if (addingToPlaylist) AddToLocalPlaylistSheet(music, playerViewModel) { addingToPlaylist = false; onDismiss() }
+    val canLike = spotifyPages || song.source == fr.spotifeur.data.MusicSource.YouTubeMusic
+    val entry = downloads[song.id]
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, containerColor = androidx.compose.ui.graphics.Color(0xFF1F1F1F),
+        contentColor = androidx.compose.ui.graphics.Color.White, dragHandle = {
+            Box(Modifier.padding(top = 10.dp, bottom = 6.dp).size(36.dp, 4.dp).clip(RoundedCornerShape(2.dp)).background(androidx.compose.ui.graphics.Color(0xFF5A5A5A)))
+        }) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(bottom = 12.dp)) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                SmartImage(model = song.albumArtUriString, contentDescription = null, shape = RoundedCornerShape(4.dp), modifier = Modifier.size(52.dp))
+                Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                    Text(song.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    Text(listOfNotNull(song.displayArtist.takeIf(String::isNotBlank), formatDuration(song.duration).takeIf { song.duration > 0 }).joinToString(" · "),
+                        style = MaterialTheme.typography.bodyMedium, color = androidx.compose.ui.graphics.Color(0xFFB3B3B3), maxLines = 1)
                 }
             }
-            SongInfoSegmentedListItem(
-                headline = stringResource(R.string.song_info_duration_label),
-                supporting = formatDuration(song.duration),
-                icon = Icons.Rounded.Schedule,
-                iconDescription = stringResource(R.string.song_info_duration_label),
-                shape = infoShape,
-            )
-            SongInfoSegmentedListItem(
-                headline = stringResource(R.string.song_info_album_label),
-                supporting = song.album.ifBlank { stringResource(R.string.open_album) },
-                icon = Icons.Rounded.Album,
-                iconDescription = stringResource(R.string.song_info_album_label),
-                shape = infoShape,
-                onClick = if (catalogPages) onNavigateToAlbum else null,
-            )
-            SongInfoSegmentedListItem(
-                headline = stringResource(R.string.song_info_artist_label),
-                supporting = song.displayArtist,
-                icon = Icons.Rounded.Person,
-                iconDescription = stringResource(R.string.song_info_artist_label),
-                shape = infoShape,
-                onClick = if (catalogPages) onNavigateToArtist else null,
-            )
-            if (removeFromListTrigger != null) {
-                TextButton(onClick = removeFromListTrigger, modifier = Modifier.fillMaxWidth()) {
-                    Text(stringResource(R.string.remove_from_queue))
-                }
+            androidx.compose.material3.HorizontalDivider(Modifier.padding(vertical = 6.dp), thickness = 0.5.dp, color = androidx.compose.ui.graphics.Color(0xFF3A3A3A))
+            if (canLike) MenuRow(if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                stringResource(if (isFavorite) R.string.menu_unlike else R.string.menu_like),
+                tint = if (isFavorite) androidx.compose.ui.graphics.Color(0xFF1ED760) else null) { onToggleFavorite(); onDismiss() }
+            MenuRow(Icons.AutoMirrored.Rounded.PlaylistAdd, stringResource(R.string.menu_add_to_playlist)) { addingToPlaylist = true }
+            MenuRow(Icons.AutoMirrored.Rounded.QueueMusic, stringResource(R.string.menu_add_to_queue)) { onAddToQueue(); onDismiss() }
+            MenuRow(Icons.Rounded.SkipNext, stringResource(R.string.menu_play_next)) { onAddNextToQueue(); onDismiss() }
+            if (!song.isLocal) MenuRow(if (entry?.isComplete == true) Icons.Rounded.DownloadDone else Icons.Rounded.Download,
+                when {
+                    song.id in preparations -> stringResource(R.string.download_cancel)
+                    entry == null -> stringResource(R.string.download_action)
+                    entry.failed -> stringResource(R.string.download_cancel)
+                    entry.isComplete -> stringResource(R.string.download_remove)
+                    else -> stringResource(R.string.download_progress, entry.percent.toInt().coerceAtLeast(0))
+                }, tint = if (entry?.isComplete == true) androidx.compose.ui.graphics.Color(0xFF1ED760) else null) { playerViewModel.toggleDownloadItem(music) }
+            if (spotifyPages) MenuRow(Icons.Rounded.Radio, stringResource(R.string.menu_radio)) { onStartRadio() }
+            if (catalogPages) {
+                MenuRow(Icons.Rounded.Album, stringResource(R.string.menu_go_album)) { onNavigateToAlbum() }
+                MenuRow(Icons.Rounded.Person, stringResource(R.string.menu_go_artist)) { onNavigateToArtist() }
             }
-            Spacer(Modifier.height(12.dp))
+            if (!song.isLocal) MenuRow(Icons.Rounded.Share, stringResource(R.string.menu_share)) { playerViewModel.share(music); onDismiss() }
+            if (!song.isLocal) MenuRow(Icons.Rounded.Headphones, "Listen together") {
+                playerViewModel.pickFriends(music, fr.spotifeur.presentation.viewmodel.PlayerViewModel.FriendPick.ListenTogether); onDismiss()
+            }
+            val pinned = pins.any { it.id == song.id }
+            MenuRow(Icons.Rounded.PushPin, stringResource(if (pinned) R.string.menu_unpin else R.string.menu_pin),
+                tint = if (pinned) androidx.compose.ui.graphics.Color(0xFF1ED760) else null) { playerViewModel.togglePin(music); onDismiss() }
+            onRemoveFromPlaylist?.let { remove -> MenuRow(Icons.Rounded.RemoveCircleOutline, stringResource(R.string.playlist_remove_track)) { remove(); onDismiss() } }
+            removeFromListTrigger?.let { remove -> MenuRow(Icons.Rounded.RemoveCircleOutline, stringResource(R.string.remove_from_queue)) { remove() } }
         }
+    }
+}
+
+/** One action of a Spotify-style menu: a 24 dp glyph and its label, the whole row tappable. */
+@Composable
+private fun MenuRow(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, tint: androidx.compose.ui.graphics.Color? = null, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 20.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, null, tint = tint ?: androidx.compose.ui.graphics.Color(0xFFB3B3B3), modifier = Modifier.size(24.dp))
+        Spacer(Modifier.width(18.dp))
+        Text(label, style = MaterialTheme.typography.bodyLarge, color = tint ?: androidx.compose.ui.graphics.Color.White)
     }
 }
 
@@ -357,7 +361,7 @@ fun EntityOptionsSheet(
                 isFavorite = item.id in saved,
                 onPlaySong = { playerViewModel.playItem(item); onDismiss() },
                 onToggleFavorite = if (canSave) ({ playerViewModel.model.toggleFavorite(item) }) else null,
-                onShareClick = if (item.spotifyShareUrl() != null) ({ context.shareMusic(item) }) else null,
+                onShareClick = { playerViewModel.share(item) },
                 playButtonShape = OptionsPlayButtonShape,
                 evenCornerRadiusElems = 26.dp
             )

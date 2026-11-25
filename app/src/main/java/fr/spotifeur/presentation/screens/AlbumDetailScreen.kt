@@ -2,7 +2,6 @@ package fr.spotifeur.presentation.screens
 
 import fr.spotifeur.data.source
 import androidx.compose.material.icons.rounded.Share
-import fr.spotifeur.presentation.utils.shareMusic
 import fr.spotifeur.presentation.utils.spotifyShareUrl
 import androidx.compose.foundation.layout.FlowRow
 import fr.spotifeur.ui.theme.SpotifeurStatusBarStyle
@@ -341,7 +340,7 @@ internal fun DetailActionsRow(
             stringResource(if (isPinned) R.string.pin_remove else R.string.pin_add_home), onPin, selected = isPinned))
         if (showRadio) add(ActionSpec(fr.spotifeur.data.preferences.DetailAction.RADIO, Icons.Rounded.Radio, stringResource(R.string.radio_related), onRadio))
         if (item.spotifyShareUrl() != null) add(ActionSpec(fr.spotifeur.data.preferences.DetailAction.SHARE, Icons.Rounded.Share,
-            stringResource(R.string.share_item, item.title), { context.shareMusic(item) }))
+            stringResource(R.string.share_item, item.title), { ui.share(item) }))
     }
     DetailActionBar(fr.spotifeur.data.preferences.DetailPage.ALBUM, actions, ui)
 }

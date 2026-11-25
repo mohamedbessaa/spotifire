@@ -50,6 +50,7 @@ internal fun encodePins(items: List<Music>): String = JSONArray().apply {
             if (item.mediaUri != null) put("mediaUri", item.mediaUri)
             if (item.quality.isNotEmpty()) put("quality", item.quality)
             item.ownerUsername?.let { put("ownerUsername", it) }
+            item.isrc?.let { put("isrc", it) }
             if (item.note.isNotEmpty()) put("note", item.note)
             if (item.genre.isNotEmpty()) put("genre", item.genre)
             if (item.artwork != 0) put("artwork", item.artwork)
@@ -75,6 +76,7 @@ internal fun decodePins(encoded: String?): List<Music> {
                 mediaUri = if (entry.has("mediaUri")) entry.getString("mediaUri") else null,
                 quality = entry.optString("quality"),
                 ownerUsername = entry.optString("ownerUsername").takeIf(String::isNotBlank),
+                isrc = entry.optString("isrc").takeIf(String::isNotBlank),
                 note = entry.optString("note"),
                 genre = entry.optString("genre"),
                 artwork = entry.optInt("artwork"),

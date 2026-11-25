@@ -9,5 +9,6 @@
 - The engine binaries are produced from the supplied APKM by the `prepareSpotifyRuntime` task, with verified hashes. Never add them to Git.
 - The player uses HLS mode 4 and NativeMediaProcessor. `GetMediaHandleId(AUDIO)` needs the full 20-byte file ID (40 hex characters). The 16-byte MP4 KID is only used to find the context. Do not truncate the ID in the request and do not reintroduce MediaCrypto on this path.
 - Shuffle reorders the queue inside `SpotifyPlayer`. Media3's own shuffle mode stays off.
-- YouTube Music tracks, and Spotify tracks played without a Spotify account, use `ytm://` addresses read by `YouTubeDataSource` (progressive, byte ranges). That path never goes through the Spotify engine, and the Spotify path never falls back to it while signed in.
-- Everything in the repository is written in English. The app ships English (default) and French strings.
+- YouTube Music tracks, and Spotify tracks read from a copy, use `ytm://` addresses read by `YouTubeDataSource` (progressive, byte ranges). `AudioRoute` decides: without an account, or on an account the engine holds to 128 kbit/s (Spotify Free), a Spotify track plays and downloads from its best copy (`CopyResolver`: Monochrome by ISRC, then YouTube Music); a copy that cannot be opened falls back to the engine at the same position. Premium accounts keep the engine.
+- Everything in the repository is written in English. The app ships English only.
+- Crossfade uses two players (`Crossfade.kt`); engine tracks never overlap until two encrypted decoders at once are proven by PCM.

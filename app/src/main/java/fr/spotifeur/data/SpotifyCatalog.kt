@@ -52,6 +52,10 @@ internal class SpotifyCatalog(
     /** Reads entities through the native core when Extended Metadata over HTTP refuses them. */
     private val nativeMetadata: (suspend (uris: List<String>) -> Map<String, ByteArray>)? = null,
 ) {
+    /** The catalog of the signed-in session, for code that runs outside the model (the copy resolver). */
+    init { current = this }
+    companion object { @Volatile internal var current: SpotifyCatalog? = null }
+
     private val musicCache = ConcurrentHashMap<String, Music>()
     private val metadataCache = ConcurrentHashMap<String, ByteArray>()
     private val requests = Semaphore(4)
@@ -528,8 +532,13 @@ internal fun decodeMetadataTrack(track: Proto, parentAlbum: Music? = null): Musi
         id = uri, title = title, subtitle = artists.joinToString(", ").ifBlank { album?.subtitle.orEmpty() },
         kind = MusicKind.Track, artwork = Math.floorMod(uri.hashCode(), 6), imageUrl = album?.imageUrl,
         durationMs = track.number(7)?.let(::unZigZag)?.coerceAtLeast(0) ?: 0,
+        isrc = metadataIsrc(track),
     )
 }
+
+/** metadata.Track field 10, `external_id`: 1 type, 2 id. */
+internal fun metadataIsrc(track: Proto): String? = track.messages(10)
+    .firstOrNull { it.text(1).equals("isrc", ignoreCase = true) }?.text(2)?.trim()?.uppercase()?.takeIf { it.length == 12 }
 
 internal fun decodeMetadataAlbum(album: Proto): Music? {
     val uri = gidUri("album", album.bytes(1)) ?: return null

@@ -82,9 +82,11 @@ fun SpotifireAccountsScreen(model: SpotifeurModel, navController: NavHostControl
     val youTube by model.youTubePlaylists.collectAsStateWithLifecycle()
     val library by model.library.collectAsStateWithLifecycle()
     val localFiles by model.localTracks.collectAsStateWithLifecycle()
-    val spotifyName by produceState<String?>(null, discovery.spotifyEnabled) {
-        value = if (discovery.spotifyEnabled) runCatching { SpotifyAccount.current()?.username() }.getOrNull() else null
+    // The display name, never the username: an email account's username is a random id.
+    val spotifyProfile by produceState<fr.spotifeur.data.SpotifyProfile?>(null, discovery.spotifyEnabled) {
+        value = if (discovery.spotifyEnabled) fr.spotifeur.data.SpotifyProfiles.current() else null
     }
+    val spotifyName = spotifyProfile?.name
     var confirmSpotify by remember { mutableStateOf(false) }
     var confirmGoogle by remember { mutableStateOf(false) }
 
@@ -108,6 +110,7 @@ fun SpotifireAccountsScreen(model: SpotifeurModel, navController: NavHostControl
             detail = if (discovery.spotifyEnabled) listOfNotNull(spotifyName, library.content?.let { "${it.playlists.size} playlists • ${it.savedTrackCount} liked songs" })
                 .joinToString("\n") else "Your playlists, liked songs, albums and artists, synced both ways. Plays with Spotify's own audio engine.",
             action = if (discovery.spotifyEnabled) "Log out" else "Log in",
+            photo = spotifyProfile?.imageUrl,
             onAction = { if (discovery.spotifyEnabled) confirmSpotify = true else model.showSignIn() },
         )
         AccountCard(

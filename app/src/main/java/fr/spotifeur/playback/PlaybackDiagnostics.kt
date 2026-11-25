@@ -67,6 +67,8 @@ internal class ExtractorProbe : androidx.media3.exoplayer.hls.HlsExtractorFactor
 
 @UnstableApi
 internal class SignalProbe : BaseAudioProcessor() {
+    private var squares = 0.0
+    private var counted = 0L
     override fun onConfigure(inputAudioFormat: AudioFormat): AudioFormat =
         if (inputAudioFormat.encoding == C.ENCODING_PCM_16BIT) inputAudioFormat else AudioFormat.NOT_SET
 
@@ -75,7 +77,17 @@ internal class SignalProbe : BaseAudioProcessor() {
         val size = inputBuffer.remaining()
         val samples = inputBuffer.duplicate().order(ByteOrder.LITTLE_ENDIAN)
         var signal = false
-        while (samples.remaining() >= 2) if (kotlin.math.abs(samples.short.toInt()) > 32) { signal = true; break }
+        while (samples.remaining() >= 2) {
+            val sample = samples.short.toInt()
+            if (kotlin.math.abs(sample) > 32) signal = true
+            squares += sample.toDouble() * sample; counted++
+        }
+        // One line a second with the decoded level, so a run on the phone can be checked from logcat.
+        if (counted >= inputAudioFormat.sampleRate.toLong() * inputAudioFormat.channelCount) {
+            val rms = kotlin.math.sqrt(squares / counted) / 32768.0
+            android.util.Log.i("SpotifeurSignal", "rms=%.1f dBFS rate=%d".format(20 * kotlin.math.log10(rms.coerceAtLeast(1e-9)), inputAudioFormat.sampleRate))
+            squares = 0.0; counted = 0
+        }
         PlaybackDiagnostics.decodedBytes.addAndGet(size.toLong())
         if (signal) {
             PlaybackDiagnostics.nonSilentBuffers.incrementAndGet()
