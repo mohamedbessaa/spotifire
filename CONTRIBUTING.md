@@ -1,4 +1,4 @@
-# Contributing to Spotifeur
+# Contributing to Spotifire
 
 Thanks for considering a contribution.
 
@@ -14,7 +14,7 @@ Thanks for considering a contribution.
 
 Include:
 
-- the Spotifeur version or commit;
+- the Spotifire version or commit;
 - your Android version and device model;
 - whether you built it with the native engine or with `-PnativeRuntime=false`;
 - steps to reproduce;

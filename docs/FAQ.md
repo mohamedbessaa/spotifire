@@ -1,57 +1,34 @@
 # FAQ
 
-## Do I need a Spotify account?
+**Do I need a Spotify account?**
+No. Without one, Spotifire plays YouTube Music, your phone's music files, and Spotify songs of
+imported playlists from their copies.
 
-No. Without an account, Spotifeur plays the YouTube Music catalog and the audio files on your phone, and Spotify tracks of imported playlists play from their closest YouTube Music match. With an account, it shows your Spotify library and plays what your account is allowed to play. Free and Premium accounts have been tested, including playlists and offline playback. Free accounts play AAC 128 kbit/s; Premium also plays AAC 256 kbit/s. If something fails with your account, Settings → Diagnostic report gives a text to attach to a bug report.
+**Is a Spotify Free account limited?**
+Not in Spotifire. Spotify's engine plays Free accounts at 128 kbit/s and refuses offline listening,
+so on Free each Spotify song plays and downloads from its best copy: the same recording (ISRC) on
+Monochrome, else YouTube Music. Premium accounts use Spotify's engine.
 
-## Do I need the official Spotify app installed?
+**Does it use the installed Spotify app?**
+No. Spotify's engine, taken unchanged from the official APK, is packaged inside Spotifire at build time.
 
-No. Spotifeur does not use the installed app. Spotify's audio engine, taken unchanged from the official APK, is packaged inside Spotifeur.
+**How do I get updates?**
+The app offers them itself: see [UPDATES.md](UPDATES.md).
 
-## Where do I get the APK?
+**How do friends find me?**
+By your name or your code (`name#CODE`, in Friends → My code), or by scanning your QR code. With
+*Let people find me by name* off, only your code works.
 
-From the [latest release](https://github.com/jean-voila/Spotifeur/releases/latest). Each release lists the SHA-256 of the APK and of its signing certificate. You can also build it yourself from the source and your own copy of the official APKM: see [Build from source](../README.md#build-from-source). A build you made yourself is signed with a different key, so uninstall the other one first (this erases the session and downloads).
+**Two people have the same name.**
+The code after `#` tells them apart. A request from someone who uses a friend's name is marked.
 
-## How do application updates work?
+**Is Listen together in sync?**
+Both phones play their own copy of the song on a clock taken from public time servers and correct
+small drifts by nudging the speed (inaudible) or seeking. Headphones over Bluetooth add their own delay.
 
-Spotifeur checks GitHub at startup. A newer release opens a dialog with release notes and a download button. Android confirms the installation. If you dismiss the dialog, the same release is offered again at the first startup at least 24 hours later. Settings → Check for updates checks immediately.
+**I reinstalled and my friends are gone.**
+Restore them with your recovery phrase: Friends → *I use Friends on another phone*. Keep the 12 words
+from Friends settings → Recovery phrase somewhere safe.
 
-## Which Spotify version is needed?
-
-Exactly 9.2.0.26 (build 148373686), ARM64. The build checks the SHA-256 of the extracted files and stops if they differ.
-
-## Does it work on x86 emulators or 32-bit phones?
-
-No. The engine is ARM64 only.
-
-## How do I sign in?
-
-Enter the email address of your Spotify account, then the code Spotify emails you. If your Spotify account is linked to Google, "Sign in with Google" opens Google's page instead. Signing in with a password is also available. The session is kept encrypted on the device and restored at each launch. Settings → Spotify account → Sign out erases it.
-
-## Why no podcasts, audiobooks, videos or Canvas?
-
-Spotifeur is for music only. Those items are filtered out of search, pages and the library.
-
-## Are my changes synced with the official app?
-
-Yes. Saved tracks, albums, followed artists and playlists use the same services as the official app. Pins are the exception: they stay on the device.
-
-## Can I use my YouTube Music playlists?
-
-Yes. Connect a Google account in Settings → Accounts: your YouTube Music playlists appear in the library and stay synced with the account, and new playlists can be created there. The YouTube Music catalog still plays without an account.
-
-## Can I move a playlist from Spotify to YouTube Music?
-
-Yes. On the playlist's page, ⋮ → Convert to…, then choose Spotify, YouTube Music or a multi-service playlist. Spotifeur looks up each track on the destination, highlights the matches it is not sure of, and lets you change or leave out any track before creating the playlist.
-
-## How does offline playback work?
-
-Download an album, a playlist or a track from its page. Recently played and upcoming tracks are also kept in a cache you can size in Settings → Cached storage. Audio stays encrypted on the device. The offline mode switch stops all network access from the app.
-
-## Can I use Spotifeur to save MP3 files or skip Premium?
-
-No. Spotifeur never writes decrypted audio and does not unlock anything your account does not have.
-
-## Where is the protocol documentation?
-
-In [`protocol/`](../protocol/). It can be read without the code.
+**Why does the app stay upright?**
+Spotifire is designed for portrait only.

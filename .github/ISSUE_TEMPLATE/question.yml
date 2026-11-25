@@ -1,5 +1,5 @@
 name: Question
-description: Ask a question about using or building Spotifeur
+description: Ask a question about using or building Spotifire
 title: "[Question]: "
 labels: ["question"]
 body:
@@ -14,6 +14,6 @@ body:
     id: context
     attributes:
       label: Context
-      description: Android version, device, Spotifeur version, what you already tried.
+      description: Android version, device, Spotifire version, what you already tried.
     validations:
       required: false

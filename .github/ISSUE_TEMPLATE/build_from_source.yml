@@ -1,5 +1,5 @@
 name: Build problem
-description: Report a problem building Spotifeur from source
+description: Report a problem building Spotifire from source
 title: "[Build]: "
 labels: ["build", "needs triage"]
 body:

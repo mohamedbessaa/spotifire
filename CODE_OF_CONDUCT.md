@@ -1,6 +1,6 @@
 # Code of Conduct
 
-Spotifeur is a small open-source project. Keep discussions useful, respectful and focused on the app and its documentation.
+Spotifire is a small open-source project. Keep discussions useful, respectful and focused on the app and its documentation.
 
 ## Expected behavior
 

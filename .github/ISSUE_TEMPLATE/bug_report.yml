@@ -1,5 +1,5 @@
 name: Bug report
-description: Report a problem with Spotifeur
+description: Report a problem with Spotifire
 title: "[Bug]: "
 labels: ["bug", "needs triage"]
 body:
@@ -12,7 +12,7 @@ body:
   - type: input
     id: version
     attributes:
-      label: Spotifeur version or commit
+      label: Spotifire version or commit
       placeholder: "Example: 1.1.2 or a1b2c3d"
     validations:
       required: true

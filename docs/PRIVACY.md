@@ -1,37 +1,42 @@
 # Privacy
 
-Spotifeur has no server, no analytics, no crash reporting and no advertising SDK.
+Spotifire has no server, no analytics, no crash reporting and no advertising SDK. Diagnostics are
+recorded on the phone and leave it only if you copy them yourself.
 
-## What the app sends, and to whom
+## Where the app connects
 
-| Destination | What | Why |
+| Service | Why | When |
 | --- | --- | --- |
-| Spotify (`*.spotify.com`, `*.scdn.co`, Spotify CDNs) | The same requests as the official Android app: device description for the client token, sign-in, library, catalog, playlists, audio | To use your Spotify account |
-| YouTube (`music.youtube.com`, `www.youtube.com`, `*.googlevideo.com`) | Search text, playlist and video ids, an anonymous visitor identifier issued by YouTube; for a Spotify track played without a Spotify account, its title and artist | YouTube Music search, playlists and audio, without a Google account |
-| YouTube Music with a Google account (`accounts.google.com`, `music.youtube.com`) | Google's sign-in page, shown in the app. Then the account's cookies with each library and playlist request: list of playlists, their tracks, creation, renaming, visibility, added and removed tracks, deletion | Your YouTube Music playlists, only if you connect an account |
-| Spotify embed page (`open.spotify.com`) | A playlist id | Import a Spotify playlist without a Spotify account |
-| [LRCLIB](https://lrclib.net) | Title, artist, album and duration of a track | Lyrics when Spotify has none. Turn off in Settings → LRCLIB fallback. |
+| Spotify | sign-in, library, metadata, Spotify's engine | with a Spotify account |
+| YouTube / Google | YouTube Music search, streams, your playlists | when you use YouTube Music |
+| Monochrome | copies of Spotify songs (found by ISRC) | Spotify Free or no account |
+| LRCLIB, LyricsPlus | lyrics | when lyrics are shown |
+| GitHub | the latest release, to offer updates | once per launch |
+| Google Cast | casting local files | when you cast |
 
-Spotify receives a description of the device when the app registers (screen size, Android version, model, brand, manufacturer, volume steps, installer package), as it does from the official app. See [`protocol/02-client-token.md`](../protocol/02-client-token.md).
+## Friends
 
-Your Spotify credentials are only sent to Spotify's login service. Audio CDNs never receive them.
+Nothing below happens until you set up Friends.
 
-## What stays on the device
+- **Identity.** A key made on the phone. It is stored encrypted with the Android Keystore and backed
+  up by Google Block Store where available. Your 12-word recovery phrase is shown only after your
+  screen lock, in Friends settings.
+- **Messages** (requests, shares, invitations, receipts, shared playlist changes) travel through
+  public Nostr relays: nos.lol, relay.primal.net, nostr.mom, relay.snort.social, offchain.pub. Each
+  message is sealed and gift-wrapped (NIP-17/44/59): relays see a random sender key, the recipient's
+  public key and the time, never the content or the real sender. Shared playlists and Listen together
+  use a key known only to their members.
+- **Directory.** While *Let people find me by name* is on, your name, your public key and, if you set
+  one, a small photo are public so people can find you. Turning it off withdraws them.
+- **Profile photo.** Uploaded encrypted to Blossom file servers (nostr.download, files.sovbit.host,
+  24242.io). Only friends receive the key to open it.
+- **Listening now.** Off by default. When on, friends receive the song you play, encrypted; it
+  expires after an hour. Files on your phone are never announced.
+- **Blend** shares up to 200 of your liked and most played songs with that friend, encrypted.
+- **Listen together** asks public time servers (time.google.com, time.cloudflare.com, pool.ntp.org)
+  the time, to play at the same moment on every phone.
+- **Blocking** someone drops everything they send. Removing or blocking a friend stops sending them
+  anything.
 
-- The session credential, encrypted with an Android Keystore key.
-- The Google account's cookies, if one is connected, encrypted with another Android Keystore key, with its name and picture.
-- The library, pages, artwork and lyrics cache.
-- Downloaded and cached audio as delivered: encrypted for Spotify, plain for YouTube Music.
-- Settings, pins, multi-service playlists, the list of YouTube Music playlists of the connected account, YouTube Music matches of Spotify tracks and search history.
-
-Sign out (Settings → Accounts) erases the Spotify credential and stops playback. Disconnecting the Google account (Settings → Accounts) erases its cookies, the app's web cookies and the playlist pages read with it; the playlists stay on YouTube Music. Clearing the app's data erases everything.
-
-## Permissions
-
-| Permission | Use |
-| --- | --- |
-| Internet, network state | Talk to Spotify and YouTube Music, follow connectivity |
-| Foreground service, notifications | Background playback and download progress |
-| Wake lock | Keep playing with the screen off |
-| Bluetooth, nearby Wi-Fi devices, Wi-Fi multicast, location (Android 12 and older only) | Find Cast devices and audio outputs. Location is never read; older Android versions require it for device scans. |
-| Read audio / storage | Play local files |
+Relays and file servers are run by third parties. They keep encrypted data for as long as their own
+rules say; Spotifire asks the file servers to delete a photo you replace or remove.
