@@ -108,7 +108,8 @@ fun SpotifireHomeScreen(model: SpotifeurModel, navController: NavHostController,
             if (index >= 0) model.play(queue, index) else model.play(listOf(item), 0)
         } else navController.openMusic(ui, item)
     }
-    val playingContext = stable.currentSong?.let { ui.playerUiState.value.currentQueueSourceName }
+    val playerUi by ui.playerUiState.collectAsStateWithLifecycle()
+    val playingContext = stable.currentSong?.let { playerUi.currentQueueSourceName }
 
     MusicOptionsHost(ui, navController, options) { options = null }
 

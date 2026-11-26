@@ -203,7 +203,8 @@ fun SpotifirePlaylistScreen(model: SpotifeurModel, navController: NavHostControl
     }
     if (deleting) fr.spotifeur.presentation.components.DeletePlaylistDialog(model, current, onDismiss = { deleting = false }) { navController.popBackStack() }
 
-    val playingHere = stable.isPlaying && ui.playerUiState.value.currentQueueSourceName == current.title && songs.any { it.id == stable.currentSong?.id }
+    val playerUi by ui.playerUiState.collectAsStateWithLifecycle()
+    val playingHere = stable.isPlaying && playerUi.currentQueueSourceName == current.title && songs.any { it.id == stable.currentSong?.id }
     val download = downloads[playlistId]
     val subtitle = buildString {
         append(when {

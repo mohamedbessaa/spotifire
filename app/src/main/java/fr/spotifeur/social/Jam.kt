@@ -102,6 +102,7 @@ object Jam {
      * One line a second while a Jam runs: wall clock, exact position, track and decoded level. Compared between two
      * devices on a common clock, it measures the real sync (see the Jam sync check in the ledger).
      */
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     private suspend fun logSync(role: String) {
         val p = withContext(Dispatchers.Main) { observe(player?.now()) } ?: return
         val wall = System.currentTimeMillis() - (now() - p.readAt)

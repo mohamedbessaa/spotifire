@@ -79,6 +79,7 @@ private enum class DownloadsTab(val label: String) { Collections("Albums & playl
  * directly, so what is shown here is exactly what playback can read without network.
  */
 @Composable
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 fun SpotifireDownloadsScreen(model: SpotifeurModel, navController: NavHostController, bottomPadding: Int) {
     val ui = model.ui
     val context = LocalContext.current

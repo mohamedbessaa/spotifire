@@ -13,6 +13,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -39,7 +40,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.platform.LocalAutofillManager
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.contentType
 import androidx.compose.ui.semantics.semantics
@@ -55,7 +55,6 @@ import fr.spotifeur.ui.theme.GoogleSansRounded
 
 @Composable
 fun AccountScreen(model: SpotifeurModel, account: AccountUi) {
-    val ctx = LocalContext.current
     val colors = MaterialTheme.colorScheme
     var google by remember { mutableStateOf(false) }
     var googleFailed by remember { mutableStateOf(false) }
@@ -93,7 +92,7 @@ fun AccountScreen(model: SpotifeurModel, account: AccountUi) {
                             Text("Spotify", Modifier.padding(start = 10.dp).weight(1f), style = MaterialTheme.typography.titleLarge,
                                 fontFamily = GoogleSansRounded, fontWeight = FontWeight.SemiBold)
                             Surface(shape = CircleShape, color = colors.surfaceContainerHighest) {
-                                Text(ctx.getString(R.string.login_optional), Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                Text(stringResource(R.string.login_optional), Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                                     style = MaterialTheme.typography.labelLarge, color = colors.onSurfaceVariant)
                             }
                         }
@@ -104,7 +103,7 @@ fun AccountScreen(model: SpotifeurModel, account: AccountUi) {
                     onClick = model::continueWithoutAccount,
                     enabled = !account.working,
                     modifier = Modifier.fillMaxWidth().height(56.dp),
-                ) { Text(ctx.getString(R.string.continue_without_account), style = MaterialTheme.typography.titleSmall) }
+                ) { Text(stringResource(R.string.continue_without_account), style = MaterialTheme.typography.titleSmall) }
                 Spacer(Modifier.height(24.dp))
             }
         }
@@ -113,7 +112,6 @@ fun AccountScreen(model: SpotifeurModel, account: AccountUi) {
 
 @Composable
 private fun SignInForm(account: AccountUi, model: SpotifeurModel, googleFailed: Boolean, onGoogle: () -> Unit) {
-    val ctx = LocalContext.current
     val focus = LocalFocusManager.current
     val autofill = LocalAutofillManager.current
     var username by remember { mutableStateOf("") }
@@ -127,15 +125,15 @@ private fun SignInForm(account: AccountUi, model: SpotifeurModel, googleFailed: 
             when {
                 codeLength != null -> {
                     Text(
-                        account.codeEmail?.let { ctx.getString(R.string.code_prompt_email, it) }
-                            ?: ctx.getString(R.string.code_prompt),
+                        account.codeEmail?.let { stringResource(R.string.code_prompt_email, it) }
+                            ?: stringResource(R.string.code_prompt),
                         Modifier.padding(top = 16.dp, bottom = 8.dp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     OutlinedTextField(
                         value = code,
                         onValueChange = { value -> code = value.filter { it in '0'..'9' }.take(codeLength) },
-                        label = { Text(ctx.getString(R.string.code_label)) },
+                        label = { Text(stringResource(R.string.code_label)) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true,
                         shape = RoundedCornerShape(16.dp),
@@ -150,15 +148,15 @@ private fun SignInForm(account: AccountUi, model: SpotifeurModel, googleFailed: 
                         },
                         enabled = code.length == codeLength,
                         modifier = Modifier.fillMaxWidth().padding(top = 16.dp).height(56.dp),
-                    ) { Text(ctx.getString(R.string.code_confirm)) }
-                    TextButton(onClick = model::disconnectSpotify) { Text(ctx.getString(R.string.action_cancel)) }
+                    ) { Text(stringResource(R.string.code_confirm)) }
+                    TextButton(onClick = model::disconnectSpotify) { Text(stringResource(R.string.action_cancel)) }
                 }
                 else -> {
                     Spacer(Modifier.height(16.dp))
                     OutlinedTextField(
                         value = username,
                         onValueChange = { username = it },
-                        label = { Text(if (passwordMode) ctx.getString(R.string.login_user) else ctx.getString(R.string.login_email)) },
+                        label = { Text(if (passwordMode) stringResource(R.string.login_user) else stringResource(R.string.login_email)) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                         enabled = !working,
                         singleLine = true,
@@ -170,7 +168,7 @@ private fun SignInForm(account: AccountUi, model: SpotifeurModel, googleFailed: 
                     if (passwordMode) OutlinedTextField(
                         value = password,
                         onValueChange = { password = it },
-                        label = { Text(ctx.getString(R.string.login_password)) },
+                        label = { Text(stringResource(R.string.login_password)) },
                         visualTransformation = PasswordVisualTransformation(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                         enabled = !working,
@@ -192,9 +190,9 @@ private fun SignInForm(account: AccountUi, model: SpotifeurModel, googleFailed: 
                         modifier = Modifier.fillMaxWidth().padding(top = 16.dp).height(56.dp),
                     ) {
                         Text(when {
-                            account.working -> ctx.getString(R.string.login_connecting)
-                            passwordMode -> ctx.getString(R.string.login_with_password)
-                            else -> ctx.getString(R.string.login_with_code)
+                            account.working -> stringResource(R.string.login_connecting)
+                            passwordMode -> stringResource(R.string.login_with_password)
+                            else -> stringResource(R.string.login_with_code)
                         })
                     }
                     OutlinedButton(
@@ -203,15 +201,15 @@ private fun SignInForm(account: AccountUi, model: SpotifeurModel, googleFailed: 
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp).height(56.dp),
                     ) {
                         Icon(painterResource(R.drawable.ic_google), null, Modifier.size(20.dp))
-                        Text(ctx.getString(R.string.login_with_google), Modifier.padding(start = 10.dp))
+                        Text(stringResource(R.string.login_with_google), Modifier.padding(start = 10.dp))
                     }
                     TextButton(
                         onClick = { passwordMode = !passwordMode; password = "" },
                         enabled = !working,
                         modifier = Modifier.align(Alignment.CenterHorizontally),
-                    ) { Text(if (passwordMode) ctx.getString(R.string.login_use_code) else ctx.getString(R.string.login_use_password)) }
-                    if (account.working) TextButton(onClick = model::disconnectSpotify) { Text(ctx.getString(R.string.action_cancel)) }
-                    (account.error ?: ctx.getString(R.string.spotify_google_failed).takeIf { googleFailed && !working })?.let {
+                    ) { Text(if (passwordMode) stringResource(R.string.login_use_code) else stringResource(R.string.login_use_password)) }
+                    if (account.working) TextButton(onClick = model::disconnectSpotify) { Text(stringResource(R.string.action_cancel)) }
+                    (account.error ?: stringResource(R.string.spotify_google_failed).takeIf { googleFailed && !working })?.let {
                         Text(it, Modifier.padding(top = 8.dp), color = MaterialTheme.colorScheme.error)
                     }
                 }

@@ -38,6 +38,7 @@ internal class PlaybackBehavior(context: Context, private val player: ExoPlayer)
             }
         }
     }
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     fun start() {
         player.addListener(listener)
         audio.registerAudioDeviceCallback(devices, android.os.Handler(player.applicationLooper))

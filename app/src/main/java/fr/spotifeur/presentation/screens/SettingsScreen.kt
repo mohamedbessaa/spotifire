@@ -726,6 +726,7 @@ private fun SoundSettings(model: SpotifeurModel, navController: NavHostControlle
     val s by model.ui.settings.collectAsStateWithLifecycle()
     val update = model.ui::updateSettings
     val context = LocalContext.current
+    val atmosMissing = stringResource(R.string.settings_atmos_missing)
     val headphone by fr.spotifeur.playback.dsp.SoundRuntime.headphone.collectAsStateWithLifecycle()
     fun db(v: Float) = Math.round(v).let { if (it > 0) "+$it dB" else if (it == 0) "0 dB" else "$it dB" }
     SettingsScaffold(stringResource(R.string.settings_sound_title), navController) {
@@ -738,7 +739,7 @@ private fun SoundSettings(model: SpotifeurModel, navController: NavHostControlle
                         .putExtra(android.media.audiofx.AudioEffect.EXTRA_CONTENT_TYPE, android.media.audiofx.AudioEffect.CONTENT_TYPE_MUSIC)
                         .putExtra(android.media.audiofx.AudioEffect.EXTRA_PACKAGE_NAME, context.packageName)
                     runCatching { context.startActivity(panel) }.onFailure {
-                        Toast.makeText(context, context.getString(R.string.settings_atmos_missing), Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, atmosMissing, Toast.LENGTH_SHORT).show()
                     }
                 })
         }

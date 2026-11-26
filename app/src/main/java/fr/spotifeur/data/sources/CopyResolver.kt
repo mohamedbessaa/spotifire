@@ -66,6 +66,7 @@ object CopyResolver {
     }
 
     /** Applies the upgrades found earlier: drops the old copy's cached bytes, then reads the better one. */
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     fun applyUpgrades(context: android.content.Context) {
         val prefs = preferences ?: return
         val pending = prefs.all.keys.filter { it.startsWith(UPGRADE) }

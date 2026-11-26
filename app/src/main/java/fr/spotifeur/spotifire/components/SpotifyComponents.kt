@@ -342,6 +342,7 @@ fun formatTime(ms: Long): String {
  * Whether a track can play right now: always online; offline only when its whole audio is
  * on the phone (downloaded, or still complete in the recent-audio cache), or it is a local file.
  */
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 fun playableNow(context: android.content.Context, trackId: String, online: Boolean): Boolean =
     online || fr.spotifeur.data.isLocalTrackId(trackId) || fr.spotifeur.playback.AudioCache.isAvailableOffline(context, trackId)
 
