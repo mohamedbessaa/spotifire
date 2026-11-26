@@ -33,13 +33,14 @@ sealed interface DriftAction {
 
 /**
  * What a guest does about being off the host, from its last readings (actual minus expected, ms). The median of the
- * last five, so one bad reading never moves anything: under 15 ms nothing; up to 150 ms an inaudible rate trim in
+ * last five, so one bad reading never moves anything: under 15 ms nothing; up to a second an inaudible rate trim in
  * proportion (at most 0.1%, about 1 ms closed per second, many times the drift between two phones' clocks); beyond,
- * a seek, which only a glitch causes.
+ * a seek, which only a real glitch (a rebuffer, a late join) causes.
  */
 object JamDrift {
     const val DEADBAND_MS = 15L
-    const val SEEK_MS = 150L
+    /** Phones report their position in steps of up to ~0.5 s, so only more than a second apart is a real glitch. */
+    const val SEEK_MS = 1_000L
 
     fun decide(offsets: List<Long>): DriftAction {
         val recent = offsets.takeLast(5)

@@ -49,7 +49,7 @@ class JamSyncTest {
 
     @Test
     fun realGapSeeks() {
-        assertEquals(DriftAction.Seek, JamDrift.decide(listOf(400L, 410L, 395L, 405L, 402L)))
+        assertEquals(DriftAction.Seek, JamDrift.decide(listOf(1400L, 1410L, 1395L, 1405L, 1402L)))
     }
 
     @Test
@@ -78,8 +78,17 @@ class JamSyncTest {
     @Test
     fun aSeekNeedsSeveralReadings() {
         // Right after a reset one noisy reading must not trigger a seek (that chained seeks on a real guest).
-        assertFalse(JamDrift.decide(listOf(400L)) == DriftAction.Seek)
-        assertFalse(JamDrift.decide(listOf(400L, 410L)) == DriftAction.Seek)
-        assertEquals(DriftAction.Seek, JamDrift.decide(listOf(400L, 410L, 395L)))
+        assertFalse(JamDrift.decide(listOf(1400L)) == DriftAction.Seek)
+        assertFalse(JamDrift.decide(listOf(1400L, 1410L)) == DriftAction.Seek)
+        assertEquals(DriftAction.Seek, JamDrift.decide(listOf(1400L, 1410L, 1395L)))
+    }
+
+    @Test
+    fun aFewHundredMsIsTrimmedNotSought() {
+        // Phones report their position in steps of up to ~0.5 s: a gap of a few hundred ms is mostly that, and a seek
+        // for it is an audible cut. Only a real glitch (over a second) seeks.
+        val action = JamDrift.decide(List(5) { 450L })
+        assertTrue("got $action", action is DriftAction.Trim)
+        assertEquals(0.999f, (action as DriftAction.Trim).rate, 0f)
     }
 }
