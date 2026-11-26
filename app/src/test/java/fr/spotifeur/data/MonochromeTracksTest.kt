@@ -5,6 +5,9 @@ import fr.spotifeur.data.sources.CopyResolver
 import fr.spotifeur.data.sources.MonochromeTracks
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
+import fr.spotifeur.data.sources.MonochromeGate
 import org.junit.Test
 
 class MonochromeTracksTest {
@@ -32,5 +35,45 @@ class MonochromeTracksTest {
             assertEquals(it, CopyResolver.decode(CopyResolver.encode(it)))
         }
         assertNull(CopyResolver.decode(""))
+    }
+
+    @Test
+    fun losslessUrlAsksForFlac() {
+        assertEquals("https://tracks.monochrome.st/track/7?quality=LOSSLESS", MonochromeTracks.streamUrl("7", lossless = true))
+        assertEquals("https://tracks.monochrome.st/track/7", MonochromeTracks.streamUrl("7"))
+    }
+
+    private var clock = 0L
+    private val gate = MonochromeGate { clock }
+
+    @Test
+    fun gateClosesAfterARefusal() {
+        assertTrue(gate.open())
+        gate.refused(null)
+        clock += 1_000; assertFalse(gate.open())
+        clock += 1_100; assertTrue(gate.open())
+    }
+
+    @Test
+    fun backOffDoubles() {
+        gate.refused(null); gate.refused(null)
+        clock += 3_000; assertFalse(gate.open())
+        clock += 1_100; assertTrue(gate.open())
+    }
+
+    @Test
+    fun retryAfterWins() {
+        gate.refused(10)
+        clock += 9_000; assertFalse(gate.open())
+        clock += 1_100; assertTrue(gate.open())
+    }
+
+    @Test
+    fun successResets() {
+        gate.refused(null); gate.refused(null); gate.refused(null)
+        gate.served()
+        assertTrue(gate.open())
+        gate.refused(null)
+        clock += 2_100; assertTrue("back to the first step after a success", gate.open())
     }
 }
