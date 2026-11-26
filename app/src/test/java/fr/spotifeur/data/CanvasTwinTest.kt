@@ -43,4 +43,18 @@ class CanvasTwinTest {
         ))
         assertEquals("spotify:track:twin", found)
     }
+
+    @Test fun liveInTheSongNameIsNotAVersion() {
+        // "Live Forever" is a song name, not a live recording: only the version part of a title counts.
+        val studio = track("spotify:track:studio", "Live Forever", "Oasis", 276_000)
+        val concert = track("spotify:track:concert", "Live Forever - Live at Knebworth", "Oasis", 276_500)
+        assertEquals("spotify:track:studio", CanvasTwin.pick("Live Forever", "Oasis", 276_000, listOf(concert, studio)))
+        assertNull(CanvasTwin.pick("Live Forever", "Oasis", 276_000, listOf(concert)))
+    }
+
+    @Test fun moreVersionWordsCount() {
+        for (title in listOf("Song (Sped-Up)", "Song (Remixed)", "Song - Unplugged", "Song (Slowed + Reverb)")) {
+            assertNull(title, CanvasTwin.pick("Song", "Artist", 200_000, listOf(track("spotify:track:x", title, "Artist", 200_000))))
+        }
+    }
 }

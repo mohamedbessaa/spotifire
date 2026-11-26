@@ -157,7 +157,7 @@ class SpotifeurPlaybackService : MediaSessionService() {
             onHandoff = { outgoing, incoming ->
                 helpers.detach(outgoing)
                 helpers.attach(incoming)
-                mediaSession?.player = incoming
+                mediaSession?.player = JamAwarePlayer(incoming) { mediaSession }
             }).also { it.start() }
         effectsScope.launch {
             SettingsStore.get(this@SpotifeurPlaybackService).settings.map { it.normalizationLevel }.distinctUntilChanged()
@@ -176,7 +176,7 @@ class SpotifeurPlaybackService : MediaSessionService() {
         }, android.os.Handler(mainLooper))
         val intent = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        mediaSession = MediaSession.Builder(this, player).setSessionActivity(intent)
+        mediaSession = MediaSession.Builder(this, JamAwarePlayer(player) { mediaSession }).setSessionActivity(intent)
             .setCallback(object : MediaSession.Callback {
                 override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult =
                     if (controller.packageName == packageName || controller.isTrusted) super.onConnect(session, controller)

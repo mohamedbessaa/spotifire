@@ -22,7 +22,8 @@ class TruePeakLimiter(sampleRate: Int, private val channels: Int, ceilingDb: Flo
     private val release = 1.0 - exp(-1.0 / (RELEASE_SECONDS * sampleRate))
 
     // Oversampling history, per channel, newest last (ring).
-    private val history = Array(channels) { DoubleArray(TAPS_PER_PHASE) }
+    // Written twice (at i and i + TAPS_PER_PHASE), so the newest-first window is one contiguous run, no modulo.
+    private val history = Array(channels) { DoubleArray(TAPS_PER_PHASE * 2) }
     private var historyAt = 0
     // Delay line of the audio itself.
     private val delay = FloatArray(latencyFrames * channels)
@@ -47,13 +48,16 @@ class TruePeakLimiter(sampleRate: Int, private val channels: Int, ceilingDb: Flo
             var peak = 0.0
             for (c in 0 until channels) {
                 val h = history[c]
-                h[historyAt] = interleaved[base + c].toDouble()
+                val x = interleaved[base + c].toDouble()
+                h[historyAt] = x; h[historyAt + TAPS_PER_PHASE] = x
+                val newest = historyAt + TAPS_PER_PHASE
                 for (p in 0 until 4) {
+                    val taps = PHASES[p]
                     var y = 0.0
-                    for (j in 0 until TAPS_PER_PHASE) y += PHASES[p][j] * h[(historyAt - j + TAPS_PER_PHASE) % TAPS_PER_PHASE]
+                    for (j in 0 until TAPS_PER_PHASE) y += taps[j] * h[newest - j]
                     peak = maxOf(peak, abs(y))
                 }
-                peak = maxOf(peak, abs(h[(historyAt - FIR_DELAY + TAPS_PER_PHASE) % TAPS_PER_PHASE]))
+                peak = maxOf(peak, abs(h[newest - FIR_DELAY]))
             }
             historyAt = (historyAt + 1) % TAPS_PER_PHASE
             val required = if (peak > ceiling) ceiling / peak else 1.0

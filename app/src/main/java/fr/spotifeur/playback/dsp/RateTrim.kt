@@ -46,6 +46,7 @@ class RateTrimProcessor : TailingAudioProcessor() {
     private var position = 0.0
     private var advanced = 0.0
     private var produced = 0L
+    private val taps = DoubleArray(TAPS)
 
     override fun onConfigure(inputAudioFormat: AudioFormat): AudioFormat {
         if (inputAudioFormat.encoding != C.ENCODING_PCM_FLOAT) return AudioFormat.NOT_SET
@@ -92,14 +93,13 @@ class RateTrimProcessor : TailingAudioProcessor() {
             val phase = fraction * PHASES
             val p0 = phase.toInt().coerceAtMost(PHASES - 1)
             val mix = phase - p0
+            val a = KERNEL[p0]; val b = KERNEL[p0 + 1]
+            for (t in 0 until TAPS) taps[t] = a[t] + (b[t] - a[t]) * mix
+            val first = (base - HALF + 1) * channels
             for (c in 0 until channels) {
                 var sum = 0.0
-                var k = base - HALF + 1
-                for (t in 0 until TAPS) {
-                    val tap = KERNEL[p0][t] + (KERNEL[p0 + 1][t] - KERNEL[p0][t]) * mix
-                    sum += tap * history[k * channels + c]
-                    k++
-                }
+                var at = first + c
+                for (t in 0 until TAPS) { sum += taps[t] * history[at]; at += channels }
                 output.putFloat(sum.toFloat())
             }
             count++

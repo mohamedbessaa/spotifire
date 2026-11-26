@@ -24,6 +24,8 @@ interface JamPlayer {
         val buffering: Boolean = false,
         /** The length of what really plays (a copy can differ from the catalogue); 0 when not known yet. */
         val durationMs: Long = 0,
+        /** Held silent by something else (a call took the audio focus). */
+        val suppressed: Boolean = false,
     )
     fun now(): Now?
     fun upNext(): List<JSONObject>
@@ -98,6 +100,8 @@ object Jam {
     private val mutableRequests = MutableStateFlow<List<JoinRequest>>(emptyList())
     /** Friends asking to listen to what this phone plays. */
     val joinRequests: StateFlow<List<JoinRequest>> = mutableRequests.asStateFlow()
+    /** Short messages for the user (shown as a toast): an expired request, a closed queue. */
+    val notices = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 4)
     private val mutableInvites = MutableStateFlow<List<JamInvite>>(emptyList())
     val pendingInvites: StateFlow<List<JamInvite>> = mutableInvites.asStateFlow()
 
@@ -146,18 +150,26 @@ object Jam {
     // Host --------------------------------------------------------------------------------------------------
 
     /** Starts a Jam on what is playing now and invites [friends]; they choose to join. */
+    private fun inviteFor(session: SharedGroup, what: JamPlayer.Now) = JSONObject().put("type", "jam-invite").put("group", session.toJson())
+        .put("what", JSONObject().put("title", what.track.optString("title")).put("subtitle", what.track.optString("subtitle"))
+            .apply { what.track.optString("image").takeIf { it.startsWith("https://") }?.let { put("image", it) } })
+
     suspend fun start(friends: List<String>, allowGuestsToQueue: Boolean) {
         val me = me() ?: return
         val what = withContext(Dispatchers.Main) { player?.now() } ?: return
+        // Already hosting: the friends join the running Jam instead of ending it for everyone else.
+        group?.takeIf { hosting }?.let { running ->
+            val wider = running.copy(members = (running.members + friends).distinct())
+            group = wider; guard.joined(wider.id, me, wider.members.toSet())
+            Social.deliverTo(friends, inviteFor(wider, what))
+            publishView(); return
+        }
         stopAll(notify = true)
         val session = SharedGroup.create(java.util.UUID.randomUUID().toString(), what.track.optString("title"), me, listOf(me) + friends)
         group = session; hosting = true; allowQueue = allowGuestsToQueue; joined = emptySet()
         guard.joined(session.id, me, session.members.toSet())
         Social.rewatchGroups()
-        val invite = JSONObject().put("type", "jam-invite").put("group", session.toJson())
-            .put("what", JSONObject().put("title", what.track.optString("title")).put("subtitle", what.track.optString("subtitle"))
-                .apply { what.track.optString("image").takeIf { it.startsWith("https://") }?.let { put("image", it) } })
-        Social.deliverTo(friends, invite)
+        Social.deliverTo(friends, inviteFor(session, what))
         loop = Social.launchJob { NtpClock.sync(); hostLoop() }
         publishView()
     }
@@ -177,6 +189,9 @@ object Jam {
                 // A song that ended on its own continues gaplessly: the guests have the next one preloaded and switch at
                 // the same moment. A skip is held briefly on both phones so the guests can load the new song.
                 val ended = last?.let { l -> (l.durationMs.takeIf { it > 0 } ?: l.track.optLong("durationMs")).let { d -> d > 0 && l.positionMs >= d - 1_000 } } == true
+                if (last != null && (trackChanged || toggled || jumped) && now() - lastCommandAt > 1500) me()?.let { me ->
+                    applier.noteOwn(me, when { trackChanged -> "played ${nowPlaying.track.optString("title", "a song")}"; toggled -> if (nowPlaying.playing) "played" else "paused"; else -> "moved the song" })
+                }
                 if (trackChanged && last != null && nowPlaying.playing && !ended) {
                     withContext(Dispatchers.Main) { player?.pause(); player?.seek(0) }
                     val startAt = hostTime() + SKIP_HOLD_MS
@@ -187,9 +202,6 @@ object Jam {
                     last = nowPlaying.copy(positionMs = 0); lastAt = now()
                     publishView(nowPlaying.track, true)
                     continue
-                }
-                if (last != null && (trackChanged || toggled || jumped) && now() - lastCommandAt > 1500) me()?.let { me ->
-                    applier.noteOwn(me, when { trackChanged -> "played ${nowPlaying.track.optString("title", "a song")}"; toggled -> if (nowPlaying.playing) "played" else "paused"; else -> "moved the song" })
                 }
                 if (trackChanged || toggled || jumped || now() - lastSent > HEARTBEAT_MS) {
                     announce(nowPlaying.track, nowPlaying.positionMs, nowPlaying.playing, startAt = null, at = hostTimeAt(nowPlaying.readAt))
@@ -227,9 +239,14 @@ object Jam {
 
     /** Starts a Jam with the friend who asked, this phone hosting, its queue open to them. */
     suspend fun acceptRequest(from: String) {
-        requests.remove(from); mutableRequests.value = requests.list()
+        val fresh = requests.take(from)
+        mutableRequests.value = requests.list()
+        if (!fresh) { notices.tryEmit("That request has expired"); return }
         start(listOf(from), allowGuestsToQueue = true)
     }
+
+    /** Drops expired requests from what is shown. */
+    fun refreshRequests() { mutableRequests.value = requests.list() }
 
     suspend fun declineRequest(from: String) {
         requests.remove(from); mutableRequests.value = requests.list()
@@ -247,7 +264,10 @@ object Jam {
         group = next; hosting = false; clock = JamClock(); state = null; lastFromHost = now(); hostClockNtp = false; joinedAt = now()
         // From now on this phone's play, pause, skip and seek go to the host, which applies them for everyone.
         // A host quiet for 15 s (its heartbeat is 5 s) may be gone: the phone then acts on its own, so pause still works.
-        val toHost = GuestControl { command -> (now() - lastFromHost < HOST_QUIET_MS).also { if (it) Social.launch { sendCommand(command) } } }
+        val toHost = GuestControl { command ->
+            if (command is JamCommand.Add && !allowQueue) { notices.tryEmit("Only the host can add songs now"); return@GuestControl true }
+            (now() - lastFromHost < HOST_QUIET_MS).also { if (it) Social.launch { sendCommand(command) } }
+        }
         remote = toHost
         withContext(Dispatchers.Main) { player?.intercept(toHost) }
         guard.joined(next.id, next.owner, next.members.toSet())
@@ -308,6 +328,8 @@ object Jam {
             }
             // Still loading after our own seek or a new song: wait for it instead of seeking again (that loop was the
             // cuts a guest heard). Only a load stuck for long gets another try.
+            // A phone call (or another app) holds the audio: wait, do not seek every tick.
+            if (current.suppressed) return@withContext
             if (current.buffering && shouldPlay) {
                 if (bufferingSince == 0L) bufferingSince = now()
                 if (now() - bufferingSince < 4_000) return@withContext
@@ -393,6 +415,8 @@ object Jam {
                 if (invites.containsKey(next.id)) return
                 invites[next.id] = invite to body
                 publishInvites()
+                // The answer to this phone's own "Ask to join": in at once, no second tap.
+                if (pace.askedRecently(message.from)) { join(context, next.id); return }
                 // Relays deliver an invitation again after a restart: announce each one once.
                 val seen = context.getSharedPreferences("social", Context.MODE_PRIVATE)
                 val announced = seen.getStringSet("jam_announced", emptySet()).orEmpty()
@@ -425,7 +449,16 @@ object Jam {
                 val applied = withContext(Dispatchers.Main) { player?.let { applier.apply(it, message.author, body) } == true }
                 if (applied) {
                     lastCommandAt = now()
-                    // Everyone hears the change at once, not at the next heartbeat.
+                    // Everyone hears the change at once, not at the next heartbeat: wait (up to 1 s) for it to land here,
+                    // since the player's controller applies commands a moment later.
+                    val before = withContext(Dispatchers.Main) { player?.now() }
+                    for (attempt in 1..10) {
+                        delay(100)
+                        val after = withContext(Dispatchers.Main) { player?.now() }
+                        val moved = after?.track?.optString("id") != before?.track?.optString("id") || after?.playing != before?.playing ||
+                            kotlin.math.abs((after?.positionMs ?: 0) - (before?.positionMs ?: 0) - attempt * 100L) > 1500
+                        if (moved) break
+                    }
                     withContext(Dispatchers.Main) { observe(player?.now()) }?.let { p ->
                         announce(p.track, p.positionMs, p.playing, startAt = null, at = hostTimeAt(p.readAt))
                         publishView(p.track, p.playing)

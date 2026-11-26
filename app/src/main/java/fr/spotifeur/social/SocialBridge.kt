@@ -106,7 +106,8 @@ object SocialBridge {
             val buffering = rendering?.let { it.playWhenReady && it.playbackState == androidx.media3.common.Player.STATE_BUFFERING } == true
             val duration = rendering?.duration?.takeIf { it != androidx.media3.common.C.TIME_UNSET && it > 0 } ?: 0
             return JamPlayer.Now(SharedItems.track(track), position, playing, readAt, rate, if (rendering != null) "exo" else "ctl",
-                buffering = buffering, durationMs = duration)
+                buffering = buffering, durationMs = duration,
+                suppressed = rendering?.let { it.playbackSuppressionReason != androidx.media3.common.Player.PLAYBACK_SUPPRESSION_REASON_NONE } == true)
         }
         override fun upNext(): List<JSONObject> = model.player.state.value.let { s ->
             s.queue.drop(s.index + 1).take(20).filter { it.id.startsWith("spotify:track:") || it.id.startsWith("ytm:track:") }.map(SharedItems::track)

@@ -208,4 +208,19 @@ class FloatSinkTest {
         assertTrue(sink.getFormatSupport(pcm(C.ENCODING_PCM_FLOAT, 44100, 2)) != AudioSink.SINK_FORMAT_SUPPORTED_DIRECTLY)
         assertEquals(AudioSink.SINK_FORMAT_SUPPORTED_DIRECTLY, sink.getFormatSupport(pcm(C.ENCODING_PCM_16BIT, 44100, 2)))
     }
+
+    @Test
+    fun positionSurvivesAFormatChangeUnderATrim() {
+        // A song in another format rebuilds the chain; the trim's skew so far must not be forgotten.
+        fr.spotifeur.playback.dsp.RateTrim.rate = 1.001f
+        try {
+            val inner = RecordingSink()
+            val sink = FloatSink(inner, emptyList()) { false }
+            sink.configure(AudioSink.AudioSinkConfig.Builder(pcm(C.ENCODING_PCM_16BIT, 48000, 2)).build())
+            repeat(500) { assertTrue(sink.handleBuffer(sine16(480, it * 480), it * 10_000L, 1)) } // 5 s
+            sink.configure(AudioSink.AudioSinkConfig.Builder(pcm(C.ENCODING_PCM_24BIT, 48000, 2)).build())
+            repeat(500) { assertTrue(sink.handleBuffer(ramp24(480), 5_000_000L + it * 10_000L, 1)) } // 5 s more
+            assertEquals(10_000_000.0, sink.getCurrentPositionUs(false).toDouble(), 2_000.0)
+        } finally { fr.spotifeur.playback.dsp.RateTrim.rate = 1f }
+    }
 }

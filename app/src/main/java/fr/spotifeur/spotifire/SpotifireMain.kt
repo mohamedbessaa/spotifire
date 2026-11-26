@@ -97,6 +97,8 @@ fun SpotifireMain(model: SpotifeurModel) {
     LaunchedEffect(Unit) { ui.artistNavigationRequests.collect { ui.collapsePlayerSheet(); navController.navigateSafely(Screen.ArtistDetail.createRoute(it)) } }
     LaunchedEffect(Unit) { ui.albumNavigationRequests.collect { ui.collapsePlayerSheet(); navController.navigateSafely(Screen.AlbumDetail.createRoute(it)) } }
     LaunchedEffect(Unit) { ui.sharedOpens.collect { ui.collapsePlayerSheet(); navController.openMusic(ui, it) } }
+    // Short Jam messages (an expired request, a closed queue).
+    LaunchedEffect(Unit) { fr.spotifeur.social.Jam.notices.collect { ui.sendToast(it) } }
     // A Friends notification was tapped.
     LaunchedEffect(Unit) { fr.spotifeur.social.Social.openFriends.collect {
         fr.spotifeur.social.Social.openFriends.resetReplayCache()

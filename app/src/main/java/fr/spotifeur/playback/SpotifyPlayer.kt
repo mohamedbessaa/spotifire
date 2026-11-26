@@ -100,9 +100,11 @@ class SpotifyPlayer(context: Context, scope: CoroutineScope) : AutoCloseable {
      * player; the Jam's own corrections run inside [direct], which bypasses it.
      */
     @Volatile var guestControl: fr.spotifeur.social.GuestControl? = null
-    private var bypass = false
+    /** Depth, so a [direct] call inside another keeps the bypass until the outer one ends. */
+    private var directDepth = 0
+    private val bypass get() = directDepth > 0
 
-    fun direct(block: SpotifyPlayer.() -> Unit) { bypass = true; try { block() } finally { bypass = false } }
+    fun direct(block: SpotifyPlayer.() -> Unit) { directDepth++; try { block() } finally { directDepth-- } }
 
     private fun toHost(command: () -> fr.spotifeur.social.JamCommand?): Boolean {
         val control = guestControl.takeUnless { bypass } ?: return false
@@ -205,7 +207,11 @@ class SpotifyPlayer(context: Context, scope: CoroutineScope) : AutoCloseable {
         togglePlayback(player)
     }
     fun next() { if (toHost { fr.spotifeur.social.JamCommand.Next }) return; controller?.seekToNextMediaItem() }
-    fun previous() { if (toHost { fr.spotifeur.social.JamCommand.Previous }) return; controller?.seekToPrevious() }
+    fun previous() {
+        // As on this phone: past 3 s, "previous" restarts the song; earlier, it goes to the song before.
+        if (toHost { if ((controller?.currentPosition ?: 0) > 3_000) fr.spotifeur.social.JamCommand.Seek(0) else fr.spotifeur.social.JamCommand.Previous }) return
+        controller?.seekToPrevious()
+    }
     fun previousTrack() {
         if (toHost { fr.spotifeur.social.JamCommand.Previous }) return
         val player = controller ?: return
@@ -314,10 +320,16 @@ class SpotifyPlayer(context: Context, scope: CoroutineScope) : AutoCloseable {
     fun exactPositionMs(): Long? = controller?.currentPosition
     fun isPlayingNow(): Boolean = controller?.isPlaying == true
     fun resume() { if (toHost { fr.spotifeur.social.JamCommand.Play }) return; controller?.play() }
-    fun setSpeed(rate: Float) { controller?.let { if (it.playbackParameters.speed != rate) it.setPlaybackSpeed(rate) } }
     fun setVolume(volume: Float) { controller?.volume = volume }
     fun volume(): Float = controller?.volume ?: 1f
-    fun seekToItem(index: Int) { controller?.let { player ->
+    fun seekToItem(index: Int) {
+        // A guest tapping a song in the queue plays from there, for everyone.
+        val queue = mutableState.value.queue
+        if (toHost { queue.getOrNull(index)?.let { song -> fr.spotifeur.social.JamCommand.PlayTrack(fr.spotifeur.social.SharedItems.track(song),
+                queue.drop(index + 1).filter(Music::isPlayableTrack).take(50).map(fr.spotifeur.social.SharedItems::track)) } }) return
+        seekToItemHere(index)
+    }
+    private fun seekToItemHere(index: Int) { controller?.let { player ->
         val failed = player.playerError != null
         player.seekToDefaultPosition(index)
         if (failed) player.prepare()

@@ -125,6 +125,8 @@ private fun FriendsHome(model: SpotifeurModel, snap: SocialSnapshot, bottomPaddi
         val jamInvites by fr.spotifeur.social.Jam.pendingInvites.collectAsStateWithLifecycle()
         val blendInvites by fr.spotifeur.social.Blends.pendingInvites.collectAsStateWithLifecycle()
         val joinRequests by fr.spotifeur.social.Jam.joinRequests.collectAsStateWithLifecycle()
+        // Requests last two minutes: an old one leaves the screen by itself.
+        androidx.compose.runtime.LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(10_000); fr.spotifeur.social.Jam.refreshRequests() } }
         val playing by ui.stablePlayerState.collectAsStateWithLifecycle()
         val jam by fr.spotifeur.social.Jam.view.collectAsStateWithLifecycle()
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 8.dp, bottom = bottomPadding.dp)) {

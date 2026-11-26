@@ -23,12 +23,19 @@ class JoinRequests(private val ttlMs: Long = 2 * 60_000L, private val now: () ->
 
     @Synchronized fun remove(from: String) { items.remove(from) }
 
+    /** Takes [from]'s request to answer it; false when there is none any more (expired, or already answered). */
+    @Synchronized fun take(from: String): Boolean { prune(); return items.remove(from) != null }
+
     private fun prune() { val limit = now() - ttlMs; items.values.removeAll { it.at < limit } }
 }
 
 /** One ask per friend every [gapMs], so a tap-happy finger does not flood their phone. */
 class AskPace(private val gapMs: Long = 30_000L, private val now: () -> Long = System::currentTimeMillis) {
     private val last = HashMap<String, Long>()
+
+    /** Whether this phone asked [friend] in the last [answerMs]: their invitation is then joined without a tap. */
+    @Synchronized fun askedRecently(friend: String, answerMs: Long = 2 * 60_000L): Boolean =
+        last[friend]?.let { now() - it <= answerMs } == true
 
     @Synchronized fun mayAsk(friend: String): Boolean {
         val at = now()

@@ -13,7 +13,7 @@ import kotlin.coroutines.cancellation.CancellationException
  */
 object CanvasTwin {
     private const val MAX_DRIFT_MS = 3000
-    private val versionWords = listOf("live", "karaoke", "remix", "instrumental", "acoustic", "sped up", "slowed")
+    private val versionWords = listOf("live", "karaoke", "remix(ed)?", "instrumental", "acoustic", "sped[ -]?up", "slowed", "unplugged")
         .map { it to Regex("\\b$it\\b") }
     private val cache = ConcurrentHashMap<String, String>()
     private const val NONE = ""
@@ -21,7 +21,6 @@ object CanvasTwin {
     /** The `spotify:track:` URI among [candidates] that is the same recording, or null. */
     fun pick(title: String, artist: String, durationMs: Long, candidates: List<Music>): String? {
         val core = core(title)
-        val raw = title.lowercase(Locale.ROOT)
         val main = fold(artists(artist).firstOrNull() ?: return null)
         if (core.isEmpty()) return null
         return candidates.firstOrNull { candidate ->
@@ -29,7 +28,7 @@ object CanvasTwin {
                 core(candidate.title) == core &&
                 artists(candidate.subtitle).any { fold(it) == main } &&
                 Math.abs(candidate.durationMs - durationMs) <= MAX_DRIFT_MS &&
-                sameVersion(candidate.title.lowercase(Locale.ROOT), raw)
+                sameVersion(versionPart(candidate.title), versionPart(title))
         }?.id
     }
 
@@ -52,6 +51,14 @@ object CanvasTwin {
     /** Both titles name the same versions: a remix source must not borrow the original's clip either. */
     private fun sameVersion(candidate: String, source: String) =
         versionWords.all { (_, word) -> word.containsMatchIn(candidate) == word.containsMatchIn(source) }
+
+    /** Where a title names its version: what follows " - " and what sits in brackets ("Live Forever" is a name). */
+    private fun versionPart(title: String): String {
+        val lower = title.lowercase(Locale.ROOT)
+        val after = lower.substringAfter(" - ", "")
+        val brackets = Regex("\\(([^)]*)\\)|\\[([^]]*)]").findAll(lower).joinToString(" ") { it.value }
+        return "$after $brackets"
+    }
 
     private fun artists(text: String) = text.split(",", "&", " feat.", " ft.", " x ").map(String::trim).filter(String::isNotEmpty)
 

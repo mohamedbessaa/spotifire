@@ -67,7 +67,8 @@ internal class ExtractorProbe : androidx.media3.exoplayer.hls.HlsExtractorFactor
 
 @UnstableApi
 internal class SignalProbe(private val label: String = "out") : BaseAudioProcessor() {
-    private val logging = fr.spotifeur.BuildConfig.DEBUG || android.util.Log.isLoggable("SpotifeurSignal", android.util.Log.DEBUG)
+    // Read again at each line, so `setprop log.tag.SpotifeurSignal DEBUG` works without restarting the player.
+    private val logging get() = fr.spotifeur.BuildConfig.DEBUG || android.util.Log.isLoggable("SpotifeurSignal", android.util.Log.DEBUG)
     private var squares = 0.0
     private var counted = 0L
     override fun onConfigure(inputAudioFormat: AudioFormat): AudioFormat =

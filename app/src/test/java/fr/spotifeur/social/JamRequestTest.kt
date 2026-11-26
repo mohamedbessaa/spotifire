@@ -41,4 +41,26 @@ class JamRequestTest {
         clock += 21_000
         assertTrue(pace.mayAsk("ana"))
     }
+
+    @Test
+    fun expiredRequestCannotBeAccepted() {
+        requests.receive("ana", isFriend = true)
+        clock += 2 * 60_000 + 1_000
+        assertFalse("too late to let in", requests.take("ana"))
+        requests.receive("ben", isFriend = true)
+        assertTrue(requests.take("ben"))
+        assertFalse("taken once", requests.take("ben"))
+    }
+
+    @Test
+    fun anAskIsRememberedForTheInvitation() {
+        // The friend who was asked answers with an invitation; it is joined without a second tap, for two minutes.
+        val pace = AskPace { clock }
+        pace.mayAsk("ana")
+        clock += 60_000
+        assertTrue(pace.askedRecently("ana"))
+        assertFalse(pace.askedRecently("ben"))
+        clock += 61_000
+        assertFalse(pace.askedRecently("ana"))
+    }
 }
