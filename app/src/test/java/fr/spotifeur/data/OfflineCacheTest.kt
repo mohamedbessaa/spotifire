@@ -83,7 +83,8 @@ class OfflineCacheTest {
         assertEquals(listOf("high/audio.m3u8"), variantUris(selectVariant(master, AudioQuality.AUTO.bandwidth(metered = false)) { _, _ -> 0 }))
         assertEquals(listOf("high/audio.m3u8"), variantUris(selectVariant(master, AudioQuality.NORMAL.bandwidth(false)) { uri, _ -> if (uri.startsWith("high")) 5_000 else 0 }))
         assertEquals(listOf("low/audio.m3u8"), variantUris(selectVariant(master, 64_000) { _, _ -> 0 }))
-        assertEquals(AudioQuality.AUTO, AudioQuality.of("lossless"))
+        // Lossless is a real level again: a "lossless" saved by an older version means what it says.
+        assertEquals(AudioQuality.LOSSLESS, AudioQuality.of("lossless"))
     }
 
     @Test fun thumbnailsBecomeTheLargestCover() {

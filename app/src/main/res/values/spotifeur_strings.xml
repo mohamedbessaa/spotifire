@@ -246,11 +246,12 @@
     <string name="settings_quality_wifi_title">Streaming quality on Wi-Fi</string>
     <string name="settings_quality_mobile_title">Streaming quality on mobile data</string>
     <string name="settings_quality_download_title">Download quality</string>
-    <string name="settings_quality_description">Automatic picks Very high on Wi-Fi and Normal on a metered network. On a Spotify Free account, Spotify tracks play from their best copy, up to lossless.</string>
+    <string name="settings_quality_description">Automatic picks Lossless on Wi-Fi and Normal on a metered network. Lossless plays a song from its FLAC copy (CD quality) when one exists, on every account; otherwise the best the song has. Lossless uses about four times the data.</string>
     <string name="settings_quality_download_description">Applies to new downloads. A track already on the device plays from its stored copy.</string>
     <string name="audio_quality_auto">Automatic</string>
     <string name="audio_quality_normal">Normal (128 kbit/s)</string>
     <string name="audio_quality_very_high">Very high</string>
+    <string name="audio_quality_lossless">Lossless (FLAC)</string>
     <string name="history_title">Listening history</string>
     <string name="history_today">Today</string>
     <string name="history_yesterday">Yesterday</string>

@@ -29,4 +29,28 @@ class AppSettingsPlaybackTest {
         assertFalse(old.showScrollbar)
         assertEquals(AppSettings().copy(showScrollbar = false), old)
     }
+
+    @Test
+    fun losslessIsItsOwnLevel() {
+        assertEquals(fr.spotifeur.data.AudioQuality.LOSSLESS, fr.spotifeur.data.AudioQuality.of("lossless"))
+    }
+
+    @Test
+    fun autoMeansLosslessOnWifiOnly() {
+        assertTrue(fr.spotifeur.data.AudioQuality.wantsLossless("auto", metered = false))
+        assertFalse(fr.spotifeur.data.AudioQuality.wantsLossless("auto", metered = true))
+        assertTrue(fr.spotifeur.data.AudioQuality.wantsLossless("lossless", metered = true))
+    }
+
+    @Test
+    fun explicitVeryHighStays() {
+        assertFalse(fr.spotifeur.data.AudioQuality.wantsLossless("very_high", metered = false))
+        assertFalse(fr.spotifeur.data.AudioQuality.wantsLossless("normal", metered = false))
+    }
+
+    @Test
+    fun newInstallDownloadsLossless() {
+        assertEquals("lossless", fr.spotifeur.data.preferences.AppSettings().downloadQuality)
+        assertEquals("very_high", fr.spotifeur.data.preferences.AppSettings.fromJson(org.json.JSONObject("{\"downloadQuality\":\"very_high\"}")).downloadQuality)
+    }
 }

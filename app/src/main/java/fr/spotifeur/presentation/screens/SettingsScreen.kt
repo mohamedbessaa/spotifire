@@ -265,6 +265,7 @@ private fun PlaybackSettings(model: SpotifeurModel, navController: NavHostContro
             fr.spotifeur.data.AudioQuality.AUTO.key to stringResource(R.string.audio_quality_auto),
             fr.spotifeur.data.AudioQuality.NORMAL.key to stringResource(R.string.audio_quality_normal),
             fr.spotifeur.data.AudioQuality.VERY_HIGH.key to stringResource(R.string.audio_quality_very_high),
+            fr.spotifeur.data.AudioQuality.LOSSLESS.key to stringResource(R.string.audio_quality_lossless),
         )
         SettingsGroup(header = stringResource(R.string.settings_group_quality), footer = stringResource(R.string.settings_quality_description)) {
         ThemeSelectorItem(

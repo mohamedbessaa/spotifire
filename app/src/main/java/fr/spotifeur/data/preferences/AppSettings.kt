@@ -55,7 +55,7 @@ data class AppSettings(
     /** [fr.spotifeur.data.AudioQuality] keys for streaming on Wi-Fi, on mobile data, and for downloads. */
     val streamingQualityWifi: String = "auto",
     val streamingQualityMobile: String = "auto",
-    val downloadQuality: String = "very_high",
+    val downloadQuality: String = "lossless",
     /** Volume level: "off", "quiet" (-23 LUFS), "normal" (-14) or "loud" (-11), from the loudness each service publishes. */
     val normalizationLevel: String = "normal",
     /** The ⋮ button at the top right of the full player. */
