@@ -12,6 +12,14 @@ object SpotifyCanvas {
     private val cache = ConcurrentHashMap<String, String>()
     private const val NONE = ""
 
+    /** The clip for [song]: its own canvas on Spotify, otherwise that of its Spotify twin, when one is found. */
+    suspend fun videoFor(song: fr.spotifeur.data.model.Song): String? {
+        if (song.id.startsWith("spotify:track:")) return videoFor(song.id)
+        val session = SpotifyAccount.current() ?: return null
+        val twin = CanvasTwin.find(song, SpotifySearch(SpotifyAccount.transport, session)) ?: return null
+        return videoFor(twin)
+    }
+
     /** The MP4 of [trackUri]'s canvas, null when it has none or no Spotify session is open. */
     suspend fun videoFor(trackUri: String): String? {
         if (!trackUri.startsWith("spotify:track:")) return null
@@ -21,7 +29,7 @@ object SpotifyCanvas {
         val url = runCatching {
             decode(authenticatedSpotifyRequest(SpotifyAccount.transport, session, spotifyUrl("canvaz-cache/v0/canvases"), "Canvas", body))
         }.onFailure { android.util.Log.i("SpotifeurCanvas", "canvas unavailable for $trackUri: ${it.javaClass.simpleName}") }
-            .getOrElse { return null }[trackUri]
+            .getOrElse { if (it is kotlin.coroutines.cancellation.CancellationException) throw it; return null }[trackUri]
         cache[trackUri] = url ?: NONE
         return url
     }

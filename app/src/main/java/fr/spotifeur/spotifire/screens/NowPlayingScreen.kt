@@ -161,7 +161,7 @@ fun SpotifireNowPlaying(model: SpotifeurModel, navController: NavHostController,
         val canvasUrl by androidx.compose.runtime.produceState<String?>(null, song.id, canvasOn) {
             // The previous song's clip goes at once; the new one shows when it is known.
             value = null
-            value = if (canvasOn) fr.spotifeur.data.SpotifyCanvas.videoFor(song.id) else null
+            value = if (canvasOn) fr.spotifeur.data.SpotifyCanvas.videoFor(song) else null
         }
         val canvas = canvasUrl?.takeIf { pane == PlayerPane.Player }
         if (canvas != null) fr.spotifeur.spotifire.components.CanvasVideo(canvas, state.isPlaying, Modifier.fillMaxSize())
