@@ -76,17 +76,20 @@ class SpotifeurPlaybackService : MediaSessionService() {
                 }
             }
             override fun buildAudioSink(context: android.content.Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): AudioSink {
-                // EQ, then the dimensional effect, then loudness with its limiter last, so nothing clips; the debug
-                // probe measures what is heard.
+                // EQ, then the dimensional effect, then loudness with its true-peak limiter last, so nothing clips;
+                // the debug probe measures what is heard. They run in float in FloatSink, in front of a sink that
+                // writes float (Media3 skips custom processors on its own float path); speed is the AudioTrack's.
                 val eq = fr.spotifeur.playback.dsp.EqProcessor()
                 val spatial = fr.spotifeur.playback.dsp.SpatialProcessor()
                 pendingSound = eq to spatial
                 val processor = LoudnessProcessor().also(onLoudness)
                 val meter = fr.spotifeur.playback.dsp.EnergyMeter().also { pendingMeter = it }
                 val effects = arrayOf<androidx.media3.common.audio.AudioProcessor>(eq, spatial, processor, meter)
-                val chain = if (BuildConfig.BUILD_TYPE == "debug") effects + SignalProbe() else effects
-                return DefaultAudioSink.Builder(context).setEnableFloatOutput(enableFloatOutput)
-                    .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams).setAudioProcessors(chain).build()
+                // The probe is cheap and always there; it logs in debug builds, or in release once switched on over adb
+                // (setprop log.tag.SpotifeurSignal DEBUG), so the real sound can be checked on any build.
+                val chain = arrayOf<androidx.media3.common.audio.AudioProcessor>(SignalProbe("in")) + effects + SignalProbe()
+                val output = DefaultAudioSink.Builder(context).setEnableFloatOutput(true).setEnableAudioTrackPlaybackParams(true).build()
+                return fr.spotifeur.playback.dsp.FloatSink(output, chain.toList()) { SettingsStore.get(context).settings.value.skipSilence }
             }
         }
         // Playlists have no length and stay out of both caches: the data source keeps those itself.

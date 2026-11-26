@@ -104,6 +104,23 @@ class FloatDspTest {
     }
 
     @Test
+    fun endOfStreamTailIsLetOutOnce() {
+        // Media3's pipeline repeats queueEndOfStream on every pass once the processor before has ended; the limiter's
+        // held frames must come out once, or the drain never ends (silence forever, a stalled player).
+        val pipeline = androidx.media3.common.audio.AudioProcessingPipeline(com.google.common.collect.ImmutableList.of(
+            EqProcessor(), LoudnessProcessor(), fr.spotifeur.playback.dsp.EnergyMeter()))
+        pipeline.configure(AudioFormat(rate, 2, C.ENCODING_PCM_FLOAT)); pipeline.flush()
+        val input = tone(0.1, 2, 1000.0 to 0.5)
+        pipeline.queueInput(ByteBuffer.allocate(input.size * 4).order(ByteOrder.LITTLE_ENDIAN).apply { input.forEach { putFloat(it) }; flip() })
+        pipeline.queueEndOfStream()
+        var bytes = 0L; var passes = 0
+        while (!pipeline.isEnded && passes < 10_000) { val out = pipeline.output; bytes += out.remaining(); out.position(out.limit()); passes++ }
+        assertTrue("the drain ends (passes=$passes)", pipeline.isEnded)
+        val latency = fr.spotifeur.playback.dsp.TruePeakLimiter(rate, 2).latencyFrames
+        assertEquals("input plus one lookahead tail", (input.size / 2 + latency) * 2 * 4L, bytes)
+    }
+
+    @Test
     fun twentyFourBitDetailSurvives() {
         val input = tone(1.0, 2, 1000.0 to 1e-5) // -100 dBFS: below 16-bit's last bit
         val output = runFloat(input, 2, EqProcessor(), SpatialProcessor(), LoudnessProcessor())

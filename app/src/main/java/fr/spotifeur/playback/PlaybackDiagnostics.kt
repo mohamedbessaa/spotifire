@@ -66,30 +66,34 @@ internal class ExtractorProbe : androidx.media3.exoplayer.hls.HlsExtractorFactor
 }
 
 @UnstableApi
-internal class SignalProbe : BaseAudioProcessor() {
+internal class SignalProbe(private val label: String = "out") : BaseAudioProcessor() {
+    private val logging = fr.spotifeur.BuildConfig.DEBUG || android.util.Log.isLoggable("SpotifeurSignal", android.util.Log.DEBUG)
     private var squares = 0.0
     private var counted = 0L
     override fun onConfigure(inputAudioFormat: AudioFormat): AudioFormat =
-        if (inputAudioFormat.encoding == C.ENCODING_PCM_16BIT) inputAudioFormat else AudioFormat.NOT_SET
+        if (inputAudioFormat.encoding == C.ENCODING_PCM_16BIT || inputAudioFormat.encoding == C.ENCODING_PCM_FLOAT) inputAudioFormat
+        else AudioFormat.NOT_SET
 
     override fun queueInput(inputBuffer: ByteBuffer) {
         if (!inputBuffer.hasRemaining()) return
         val size = inputBuffer.remaining()
         val samples = inputBuffer.duplicate().order(ByteOrder.LITTLE_ENDIAN)
+        val float = inputAudioFormat.encoding == C.ENCODING_PCM_FLOAT
         var signal = false
-        while (samples.remaining() >= 2) {
-            val sample = samples.short.toInt()
+        while (samples.remaining() >= if (float) 4 else 2) {
+            // In 16-bit units either way, so the threshold and the dBFS figure mean the same thing.
+            val sample = if (float) samples.float * 32768.0 else samples.short.toDouble()
             if (kotlin.math.abs(sample) > 32) signal = true
-            squares += sample.toDouble() * sample; counted++
+            squares += sample * sample; counted++
         }
         // One line a second with the decoded level, so a run on the phone can be checked from logcat.
         if (counted >= inputAudioFormat.sampleRate.toLong() * inputAudioFormat.channelCount) {
             val rms = kotlin.math.sqrt(squares / counted) / 32768.0
-            android.util.Log.i("SpotifeurSignal", "rms=%.1f dBFS rate=%d".format(20 * kotlin.math.log10(rms.coerceAtLeast(1e-9)), inputAudioFormat.sampleRate))
+            if (logging) android.util.Log.i("SpotifeurSignal", "$label rms=%.1f dBFS rate=%d enc=%d".format(20 * kotlin.math.log10(rms.coerceAtLeast(1e-9)), inputAudioFormat.sampleRate, inputAudioFormat.encoding))
             squares = 0.0; counted = 0
         }
-        PlaybackDiagnostics.decodedBytes.addAndGet(size.toLong())
-        if (signal) {
+        if (label == "out") PlaybackDiagnostics.decodedBytes.addAndGet(size.toLong())
+        if (signal && label == "out") {
             PlaybackDiagnostics.nonSilentBuffers.incrementAndGet()
             PlaybackDiagnostics.lastSignalAt.set(SystemClock.elapsedRealtime())
         }

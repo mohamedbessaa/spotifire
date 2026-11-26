@@ -96,12 +96,19 @@ internal class LoudnessProcessor : BaseAudioProcessor() {
         return inputAudioFormat
     }
 
-    override fun onFlush() { reduction = 1f; snap = true; limiter?.reset() }
+    override fun onFlush() { reduction = 1f; snap = true; limiter?.reset(); tailed = false }
 
     override fun onReset() { limiter = null; frames = FloatArray(0) }
 
-    /** The float limiter holds its lookahead back; at the end of a stream it is let out. */
+    private var tailed = false
+
+    /**
+     * The float limiter holds its lookahead back; at the end of a stream it is let out, once: Media3's pipeline repeats
+     * queueEndOfStream on every pass after the processor before has ended, and a second tail would be silence forever.
+     */
     override fun onQueueEndOfStream() {
+        if (tailed) return
+        tailed = true
         val tail = limiter?.drain() ?: return
         replaceOutputBuffer(tail.size * 4).order(ByteOrder.LITTLE_ENDIAN).apply { tail.forEach { putFloat(it) } }.flip()
     }
