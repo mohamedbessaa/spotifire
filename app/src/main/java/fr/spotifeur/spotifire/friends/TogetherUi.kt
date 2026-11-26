@@ -92,6 +92,13 @@ internal fun JamInviteRow(invite: JamInvite, snap: SocialSnapshot) {
 }
 
 @Composable
+internal fun JoinRequestRow(request: fr.spotifeur.social.JoinRequest, snap: SocialSnapshot) {
+    InvitationRow(Icons.Outlined.Headphones, null, "${nameOf(snap, request.from)} wants to listen with you",
+        "They hear what you play, in sync, and can play, pause and skip too.", "Let in",
+        onAccept = { Social.launch { Jam.acceptRequest(request.from) } }, onDecline = { Social.launch { Jam.declineRequest(request.from) } })
+}
+
+@Composable
 internal fun BlendInviteRow(invite: BlendInvite, snap: SocialSnapshot) {
     val context = LocalContext.current
     InvitationRow(Icons.Outlined.Shuffle, null, "${nameOf(snap, invite.from)} wants to make a Blend",

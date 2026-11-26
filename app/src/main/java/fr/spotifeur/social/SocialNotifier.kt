@@ -54,6 +54,9 @@ object SocialNotifier {
     fun jamInvite(context: Context, from: String, what: String) =
         post(context, JAM, 3001, "$from wants to listen together", "$what · join or decline in Friends")
 
+    fun joinRequest(context: Context, from: String) =
+        post(context, JAM, 3003, "$from wants to listen with you", "Let them in from Friends")
+
     fun blendInvite(context: Context, from: String) =
         post(context, PLAYLISTS, 3002, "$from wants to make a Blend with you", "Accept or decline in Friends")
 

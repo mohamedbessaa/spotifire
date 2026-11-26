@@ -86,6 +86,11 @@ object Jam {
     private val invites = LinkedHashMap<String, Pair<JamInvite, JSONObject>>()
     private val mutableView = MutableStateFlow<JamView?>(null)
     val view: StateFlow<JamView?> = mutableView.asStateFlow()
+    private val requests = JoinRequests()
+    private val pace = AskPace()
+    private val mutableRequests = MutableStateFlow<List<JoinRequest>>(emptyList())
+    /** Friends asking to listen to what this phone plays. */
+    val joinRequests: StateFlow<List<JoinRequest>> = mutableRequests.asStateFlow()
     private val mutableInvites = MutableStateFlow<List<JamInvite>>(emptyList())
     val pendingInvites: StateFlow<List<JamInvite>> = mutableInvites.asStateFlow()
 
@@ -202,6 +207,26 @@ object Jam {
     }
 
     fun setAllowQueue(allowed: Boolean) { allowQueue = allowed; publishView() }
+
+    // Asking to join -----------------------------------------------------------------------------------------
+
+    /** Asks [friend] to let this phone listen to what they play; false when an ask went out in the last 30 s. */
+    suspend fun askToJoin(friend: String): Boolean {
+        if (!pace.mayAsk(friend)) return false
+        Social.deliverTo(listOf(friend), JSONObject().put("type", "jam-request"))
+        return true
+    }
+
+    /** Starts a Jam with the friend who asked, this phone hosting, its queue open to them. */
+    suspend fun acceptRequest(from: String) {
+        requests.remove(from); mutableRequests.value = requests.list()
+        start(listOf(from), allowGuestsToQueue = true)
+    }
+
+    suspend fun declineRequest(from: String) {
+        requests.remove(from); mutableRequests.value = requests.list()
+        Social.deliverTo(listOf(from), JSONObject().put("type", "jam-request-decline"))
+    }
 
     // Guest -------------------------------------------------------------------------------------------------
 
@@ -357,6 +382,11 @@ object Jam {
                 }
             }
             "jam-decline" -> Unit
+            "jam-request" -> if (requests.receive(message.from, isFriend)) {
+                mutableRequests.value = requests.list()
+                SocialNotifier.joinRequest(context, Social.nameOf(message.from))
+            }
+            "jam-request-decline" -> Unit
         }
     }
 

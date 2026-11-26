@@ -124,11 +124,15 @@ private fun FriendsHome(model: SpotifeurModel, snap: SocialSnapshot, bottomPaddi
         val playlistInvites by fr.spotifeur.social.SharedPlaylists.pendingInvites.collectAsStateWithLifecycle()
         val jamInvites by fr.spotifeur.social.Jam.pendingInvites.collectAsStateWithLifecycle()
         val blendInvites by fr.spotifeur.social.Blends.pendingInvites.collectAsStateWithLifecycle()
+        val joinRequests by fr.spotifeur.social.Jam.joinRequests.collectAsStateWithLifecycle()
+        val playing by ui.stablePlayerState.collectAsStateWithLifecycle()
+        val jam by fr.spotifeur.social.Jam.view.collectAsStateWithLifecycle()
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 8.dp, bottom = bottomPadding.dp)) {
             item { JamCard(snap) }
             item { KeepConnectedCard() }
-            if (jamInvites.isNotEmpty() || playlistInvites.isNotEmpty() || blendInvites.isNotEmpty()) {
+            if (jamInvites.isNotEmpty() || playlistInvites.isNotEmpty() || blendInvites.isNotEmpty() || joinRequests.isNotEmpty()) {
                 item { SectionTitle("Invitations") }
+                items(joinRequests, key = { "q" + it.from }) { JoinRequestRow(it, snap) }
                 items(jamInvites, key = { "j" + it.session }) { JamInviteRow(it, snap) }
                 items(playlistInvites, key = { "s" + it.id }) { PlaylistInviteRow(it, snap) }
                 items(blendInvites, key = { "b" + it.id }) { BlendInviteRow(it, snap) }
@@ -152,8 +156,21 @@ private fun FriendsHome(model: SpotifeurModel, snap: SocialSnapshot, bottomPaddi
                 item { SectionTitle("Your friends") }
                 // Friends playing something come first, as in Spotify's Friend Activity.
                 items(snap.friends.sortedWith(compareBy({ it.pubKey !in snap.listening }, { it.name.lowercase() })), key = { "f" + it.pubKey }) { friend ->
-                    FriendRow(friend, snap.photos[friend.pubKey], snap.profiles[friend.pubKey]?.bio.orEmpty(), snap.listening[friend.pubKey],
-                        onOpen = { profileOf = friend })
+                    // Both ways: ask to join what they play, or invite them to what this phone plays.
+                    val listening = snap.listening[friend.pubKey]
+                    val action: Pair<String, () -> Unit>? = when {
+                        jam != null -> null
+                        listening != null -> "Ask to join" to {
+                            Social.launch { val sent = fr.spotifeur.social.Jam.askToJoin(friend.pubKey)
+                                ui.sendToast(if (sent) "Asked ${friend.name} to listen together" else "Already asked, wait a moment") }
+                        }
+                        playing.currentSong != null -> "Invite" to {
+                            model.player.state.value.track?.let { track -> ui.listenTogether(track, listOf(friend.pubKey), allowQueue = true) }
+                        }
+                        else -> null
+                    }
+                    FriendRow(friend, snap.photos[friend.pubKey], snap.profiles[friend.pubKey]?.bio.orEmpty(), listening,
+                        action = action, onOpen = { profileOf = friend })
                 }
             }
             if (snap.pending.isNotEmpty()) {
@@ -231,7 +248,8 @@ private fun InboxRow(entry: InboxItem, from: String, fromPhoto: String?, onPlay:
 }
 
 @Composable
-private fun FriendRow(friend: Friend, photo: String?, bio: String, listening: fr.spotifeur.social.Listening?, onOpen: () -> Unit) {
+private fun FriendRow(friend: Friend, photo: String?, bio: String, listening: fr.spotifeur.social.Listening?,
+                      action: Pair<String, () -> Unit>? = null, onOpen: () -> Unit) {
     Row(Modifier.fillMaxWidth().quietClick(onOpen).padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         FriendAvatar(friend.pubKey, friend.name, 48.dp, photo = photo)
         Spacer(Modifier.width(12.dp))
@@ -244,6 +262,7 @@ private fun FriendRow(friend: Friend, photo: String?, bio: String, listening: fr
             } else Text(bio.ifBlank { Handles.handle(friend.name, friend.pubKey) }, color = SpotifyColors.TextSecondary, fontSize = 13.sp,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
+        action?.let { (label, onClick) -> Spacer(Modifier.width(8.dp)); PillButton(label, filled = false, onClick = onClick) }
     }
 }
 
