@@ -203,7 +203,7 @@ internal class QueuePreloader(
             val uri = item.localConfiguration?.uri ?: continue
             val available = withContext(Dispatchers.IO) { AudioCache.isAvailableOffline(app, item.mediaId) }
             if (available) continue
-            val spec = DataSpec.Builder().setUri(uri).setKey(YouTubeUris.cacheKey(item.mediaId)).build()
+            val spec = DataSpec.Builder().setUri(uri).setKey(YouTubeUris.cacheKey(item.mediaId, YouTubeUris.lossless(uri))).build()
             val writer = CacheWriter(sources.createDataSourceForDownloading(), spec, null, null)
             try { withContext(Dispatchers.IO) { runInterruptible { writer.cache() } } }
             catch (cancelled: CancellationException) { throw cancelled }

@@ -37,23 +37,29 @@ internal object YouTubeUris {
     fun isYouTube(uri: Uri?): Boolean = uri?.scheme == SCHEME
 
     /** The address that plays [track] from YouTube Music, or null when it plays another way. */
-    fun of(track: Music, spotifySignedIn: Boolean): Uri? {
+    fun of(track: Music, spotifySignedIn: Boolean, lossless: Boolean = AudioRoute.losslessWanted()): Uri? {
         track.youTubeVideoId?.let { return Uri.parse("$SCHEME://track/$it") }
-        if (!AudioRoute.viaCopy(track, spotifySignedIn)) return null
+        if (!AudioRoute.viaCopy(track, spotifySignedIn, lossless)) return null
         return Uri.Builder().scheme(SCHEME).authority("match").appendPath(track.id)
             .appendQueryParameter("title", track.title).appendQueryParameter("artists", track.subtitle)
             .appendQueryParameter("duration", track.durationMs.toString()).appendQueryParameter("album", track.album)
             .apply { track.isrc?.let { appendQueryParameter("isrc", it) } }
             .apply { if (spotifySignedIn) appendQueryParameter("strict", "1") }
+            .apply { if (lossless) appendQueryParameter("q", "lossless") }
             .build()
     }
 
+    /** Whether [uri] asks for the lossless (FLAC) copy. */
+    fun lossless(uri: Uri?): Boolean = uri?.getQueryParameter("q") == "lossless"
+
     /** The file name the caches know this track's audio by. */
-    fun fileHex(trackId: String): String =
-        YOUTUBE_FILE_PREFIX + (trackId.substringAfter("ytm:track:", "").ifEmpty { "sp-" + trackId.substringAfterLast(':') })
+    fun fileHex(trackId: String, lossless: Boolean = false): String =
+        YOUTUBE_FILE_PREFIX + (trackId.substringAfter("ytm:track:", "").ifEmpty { "sp-" + trackId.substringAfterLast(':') }) +
+            if (lossless) "-flac" else ""
 
     @androidx.annotation.OptIn(UnstableApi::class)
-    fun cacheKey(trackId: String): String = AudioCache.key(fileHex(trackId))
+    /** The name a track's copy is cached under: the FLAC copy has its own, so neither is ever served as the other. */
+    fun cacheKey(trackId: String, lossless: Boolean = false): String = AudioCache.key(fileHex(trackId, lossless))
 
     /** The track id an address plays, as the queue and the indexes know it. */
     fun trackId(uri: Uri): String? = when (uri.authority) {
@@ -107,8 +113,9 @@ internal class YouTubeDataSource private constructor(private val context: Contex
                 is Copy.YouTube -> copy.videoId
                 is Copy.Monochrome -> try { return openDirect(dataSpec, trackId, copy) } catch (failure: IOException) {
                     // Nothing of this copy is kept yet: the next copy can take its place under the same key.
-                    val kept = AudioCache.cache(context).getCachedBytes(YouTubeUris.cacheKey(trackId), 0, Long.MAX_VALUE) +
-                        DownloadCenter.cache(context).getCachedBytes(YouTubeUris.cacheKey(trackId), 0, Long.MAX_VALUE)
+                    val key = YouTubeUris.cacheKey(trackId, YouTubeUris.lossless(uri))
+                    val kept = AudioCache.cache(context).getCachedBytes(key, 0, Long.MAX_VALUE) +
+                        DownloadCenter.cache(context).getCachedBytes(key, 0, Long.MAX_VALUE)
                     android.util.Log.i("SpotifeurCopy", "$trackId monochrome failed (${failure.javaClass.simpleName}: ${failure.message}) kept=$kept")
                     if (kept > 0) throw failure
                     YouTubeUris.matchQuery(uri)?.let(CopyResolver::demote)?.videoId ?: throw failure
@@ -130,7 +137,8 @@ internal class YouTubeDataSource private constructor(private val context: Contex
             try {
                 delegate = OkHttpDataSource.Factory(YouTubeMusic.http).setUserAgent(current.userAgent).createDataSource()
                 openNextRange()
-                if (resourceEnd != UNSET) AudioIndex.get(context).attachDirectFile(trackId, AudioFileRecord(YouTubeUris.fileHex(trackId), resourceEnd, ""))
+                if (resourceEnd != UNSET) AudioIndex.get(context).attachDirectFile(trackId,
+                    AudioFileRecord(YouTubeUris.fileHex(trackId, YouTubeUris.lossless(dataSpec.uri)), resourceEnd, ""))
                 opened = true
                 transferStarted(dataSpec)
                 val end = knownEnd()
@@ -151,17 +159,32 @@ internal class YouTubeDataSource private constructor(private val context: Contex
     private fun openDirect(dataSpec: DataSpec, trackId: String, copy: Copy.Monochrome): Long {
         position = dataSpec.position
         requestEnd = if (dataSpec.length != C.LENGTH_UNSET.toLong()) dataSpec.position + dataSpec.length else UNSET
-        resourceEnd = UNSET
-        stream = YouTubeStream(copy.id, MonochromeTracks.streamUrl(copy.id), "", "monochrome", 0L, "audio/mp4",
-            MonochromeTracks.BITRATE.toLong(), 44_100, Long.MAX_VALUE)
-        delegate = OkHttpDataSource.Factory(MonochromeTracks.http).createDataSource()
-        try { openNextRange() } catch (failure: IOException) {
-            delegate?.close(); delegate = null
-            throw if (failure is HttpDataSource.InvalidResponseCodeException)
-                YouTubeFailure("The copy of this track could not be opened (HTTP ${failure.responseCode}).", "COPY_REFUSED")
-            else failure
+        val wantsLossless = YouTubeUris.lossless(dataSpec.uri)
+        val key = YouTubeUris.cacheKey(trackId, wantsLossless)
+        // FLAC first when asked. Refused before any of it is kept: the AAC copy takes its place under the same name
+        // (one whole file per name). Once bytes are kept, a refusal goes up, to the engine fallback.
+        val nothingKept = { AudioCache.cache(context).getCachedBytes(key, 0, Long.MAX_VALUE) + DownloadCenter.cache(context).getCachedBytes(key, 0, Long.MAX_VALUE) <= 0 }
+        val attempts = if (wantsLossless) listOf(true, false) else listOf(false)
+        var refusal: IOException? = null
+        for (lossless in attempts) {
+            if (lossless != attempts.first() && !nothingKept()) break
+            if (!MonochromeTracks.gate.open()) { refusal = YouTubeFailure("The copy service asked to wait.", "COPY_REFUSED"); break }
+            resourceEnd = UNSET
+            stream = YouTubeStream(copy.id, MonochromeTracks.streamUrl(copy.id, lossless), "", "monochrome", 0L,
+                if (lossless) "audio/flac" else "audio/mp4", (if (lossless) MonochromeTracks.LOSSLESS_BITRATE else MonochromeTracks.BITRATE).toLong(),
+                44_100, Long.MAX_VALUE)
+            delegate = OkHttpDataSource.Factory(MonochromeTracks.http).createDataSource()
+            try { openNextRange(); MonochromeTracks.gate.served(); refusal = null; break } catch (failure: IOException) {
+                delegate?.close(); delegate = null
+                if (failure is HttpDataSource.InvalidResponseCodeException) {
+                    if (failure.responseCode == 429) MonochromeTracks.gate.refused(failure.headerFields["Retry-After"]?.firstOrNull()?.toLongOrNull())
+                    android.util.Log.i("SpotifeurCopy", "$trackId monochrome ${if (lossless) "flac" else "aac"} refused (HTTP ${failure.responseCode})")
+                    refusal = YouTubeFailure("The copy of this track could not be opened (HTTP ${failure.responseCode}).", "COPY_REFUSED")
+                } else { refusal = failure; break }
+            }
         }
-        if (resourceEnd != UNSET) AudioIndex.get(context).attachDirectFile(trackId, AudioFileRecord(YouTubeUris.fileHex(trackId), resourceEnd, ""))
+        refusal?.let { throw it }
+        if (resourceEnd != UNSET) AudioIndex.get(context).attachDirectFile(trackId, AudioFileRecord(YouTubeUris.fileHex(trackId, wantsLossless), resourceEnd, ""))
         opened = true
         transferStarted(dataSpec)
         val end = knownEnd()

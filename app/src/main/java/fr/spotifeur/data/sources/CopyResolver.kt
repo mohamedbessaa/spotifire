@@ -78,11 +78,11 @@ object CopyResolver {
                 val id = prefs.getString(entry, null)
                 remove(entry)
                 // A downloaded song keeps the copy it was downloaded as.
-                val kept = downloads.getCachedBytes(fr.spotifeur.playback.YouTubeUris.cacheKey(key), 0, Long.MAX_VALUE)
+                val kept = listOf(false, true).sumOf { downloads.getCachedBytes(fr.spotifeur.playback.YouTubeUris.cacheKey(key, it), 0, Long.MAX_VALUE).coerceAtLeast(0) }
                 if (id != null && kept <= 0) {
                     fr.spotifeur.playback.AudioCache.remove(context, listOf(key))
                     // The copy's bytes sit under the track's copy key, whatever file the index last described.
-                    fr.spotifeur.playback.AudioCache.cache(context).removeResource(fr.spotifeur.playback.YouTubeUris.cacheKey(key))
+                    listOf(false, true).forEach { fr.spotifeur.playback.AudioCache.cache(context).removeResource(fr.spotifeur.playback.YouTubeUris.cacheKey(key, it)) }
                     putString(key, MonochromeTracks.CHOICE_PREFIX + id)
                     android.util.Log.i("SpotifeurCopy", "$key upgraded to Monochrome $id")
                 }

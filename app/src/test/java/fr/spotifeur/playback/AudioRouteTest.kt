@@ -91,4 +91,20 @@ class AudioRouteTest {
 
     private fun track(title: String, artist: String, durationMs: Int) =
         Music("ytm:track:$title$artist", title, artist, MusicKind.Track, durationMs = durationMs)
+
+    @Test
+    fun premiumWithLosslessUsesTheCopy() {
+        assertTrue(AudioRoute.viaCopy("spotify:track:x", local = false, spotifySignedIn = true, limited = false, lossless = true))
+    }
+
+    @Test
+    fun premiumWithoutLosslessKeepsTheEngine() {
+        assertFalse(AudioRoute.viaCopy("spotify:track:x", local = false, spotifySignedIn = true, limited = false, lossless = false))
+    }
+
+    @Test
+    fun freeAccountsStillUseCopies() {
+        assertTrue(AudioRoute.viaCopy("spotify:track:x", local = false, spotifySignedIn = true, limited = true, lossless = false))
+        assertTrue(AudioRoute.viaCopy("spotify:track:x", local = false, spotifySignedIn = true, limited = true, lossless = true))
+    }
 }

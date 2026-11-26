@@ -66,15 +66,33 @@ internal object AudioRoute {
     fun engineRefused() { onDemand = false }
 
     /** True when [track], a Spotify track, should be read from its matched copy rather than from the engine. */
-    fun viaCopy(track: Music, spotifySignedIn: Boolean): Boolean =
-        viaCopy(track.id, track.isLocalTrack, spotifySignedIn, accountLimited)
+    fun viaCopy(track: Music, spotifySignedIn: Boolean, lossless: Boolean = losslessWanted()): Boolean =
+        viaCopy(track.id, track.isLocalTrack, spotifySignedIn, accountLimited, lossless)
 
-    internal fun viaCopy(trackId: String, local: Boolean, spotifySignedIn: Boolean, limited: Boolean): Boolean = when {
+    /**
+     * A copy plays without a Spotify account, on an account the engine holds to 128 kbit/s, and, when [lossless] is
+     * wanted, on every account (Premium included): the FLAC copy beats the engine's AAC. A track whose copy could not be
+     * opened goes to the engine.
+     */
+    internal fun viaCopy(trackId: String, local: Boolean, spotifySignedIn: Boolean, limited: Boolean, lossless: Boolean = false): Boolean = when {
         local || !trackId.startsWith("spotify:track:") -> false
         !spotifySignedIn -> true
         trackId in engineOnly && onDemand -> false
-        else -> limited
+        else -> limited || lossless
     }
+
+    /** Whether playback asks for lossless now: the streaming setting for the network in use. */
+    fun losslessWanted(): Boolean {
+        val context = app ?: return false
+        val settings = fr.spotifeur.data.preferences.SettingsStore.get(context).settings.value
+        val metered = context.getSystemService(android.net.ConnectivityManager::class.java)?.isActiveNetworkMetered ?: true
+        return AudioQuality.wantsLossless(if (metered) settings.streamingQualityMobile else settings.streamingQualityWifi, metered)
+    }
+
+    /** Whether downloads are kept lossless (the download setting; they are made on any network). */
+    fun losslessForDownloads(): Boolean = app?.let {
+        AudioQuality.wantsLossless(fr.spotifeur.data.preferences.SettingsStore.get(it).settings.value.downloadQuality, metered = false)
+    } ?: false
 
     /** No copy of [trackId] could be opened: it plays through the engine from now on (this process). */
     fun noCopy(trackId: String) { engineOnly += trackId }

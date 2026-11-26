@@ -431,7 +431,7 @@ private fun mediaItem(track: Music, queued: Boolean = false): MediaItem {
     val spotify = youtube == null && !track.isLocalTrack
     return MediaItem.Builder().setMediaId(track.id)
         .setUri(youtube ?: track.mediaUri?.let(Uri::parse) ?: Uri.parse(track.id))
-        .apply { if (youtube != null) setCustomCacheKey(YouTubeUris.cacheKey(track.id)) }
+        .apply { if (youtube != null) setCustomCacheKey(YouTubeUris.cacheKey(track.id, YouTubeUris.lossless(youtube))) }
         .apply { if (spotify) setMimeType(MimeTypes.APPLICATION_M3U8) }
         .apply { if (!BuildConfig.NATIVE_RUNTIME && spotify) setDrmConfiguration(MediaItem.DrmConfiguration.Builder(C.WIDEVINE_UUID)
             .setLicenseUri("https://spclient.wg.spotify.com/widevine-license/v1/audio/license")

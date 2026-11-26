@@ -277,8 +277,8 @@ object DownloadCenter {
         try {
             withContext(Dispatchers.IO) { AudioIndex.get(context).describe(track, played = false) }
             // YouTube Music tracks, and Spotify tracks without an account, are kept as their YouTube Music file.
-            YouTubeUris.of(track, SpotifyAccount.signedIn)?.let { uri ->
-                val request = DownloadRequest.Builder(track.id, uri).setCustomCacheKey(YouTubeUris.cacheKey(track.id))
+            YouTubeUris.of(track, SpotifyAccount.signedIn, AudioRoute.losslessForDownloads())?.let { uri ->
+                val request = DownloadRequest.Builder(track.id, uri).setCustomCacheKey(YouTubeUris.cacheKey(track.id, YouTubeUris.lossless(uri)))
                     .setData(encodePins(listOf(track)).toByteArray()).build()
                 if (records.values.any { record -> record.tracks.any { it.id == track.id } }) {
                     current.addDownload(request)
