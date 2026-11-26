@@ -32,7 +32,8 @@ class FloatSinkTest {
         override fun setListener(listener: AudioSink.Listener) {}
         override fun supportsFormat(format: Format) = true
         override fun getFormatSupport(format: Format) = AudioSink.SINK_FORMAT_SUPPORTED_DIRECTLY
-        override fun getCurrentPositionUs(sourceEnded: Boolean) = 0L
+        /** Plays back exactly what it was given: its position is the float frames received (stereo). */
+        override fun getCurrentPositionUs(sourceEnded: Boolean) = bytes.size() / 8 * 1_000_000L / 48_000
         override fun play() {}
         override fun handleDiscontinuity() {}
         override fun playToEndOfStream() {}
@@ -55,6 +56,9 @@ class FloatSinkTest {
         override fun reset() {}
     }
 
+    /** Frames the rate trim holds for its kernel until more audio (or the end of the stream) comes. */
+    private val held = fr.spotifeur.playback.dsp.RateTrimProcessor().latencyFrames
+
     private fun pcm(encoding: Int, rate: Int, channels: Int) = Format.Builder().setSampleMimeType(MimeTypes.AUDIO_RAW)
         .setPcmEncoding(encoding).setSampleRate(rate).setChannelCount(channels).build()
 
@@ -73,7 +77,7 @@ class FloatSinkTest {
         assertEquals(C.ENCODING_PCM_FLOAT, inner.format!!.pcmEncoding)
         assertEquals(96000, inner.format!!.sampleRate)
         assertTrue(sink.handleBuffer(ramp24(1000), 0, 1))
-        assertEquals("every frame arrives, as 2 x 4-byte floats", 1000 * 2 * 4, inner.bytes.size())
+        assertEquals("every frame arrives but the trim's held kernel, as 2 x 4-byte floats", (1000 - held) * 2 * 4, inner.bytes.size())
         val first = ByteBuffer.wrap(inner.bytes.toByteArray()).order(ByteOrder.LITTLE_ENDIAN).float
         assertEquals(-4_000_000 / 8_388_608f, first, 1e-6f)
     }
@@ -90,7 +94,7 @@ class FloatSinkTest {
         assertTrue("the rest goes on the retry", sink.handleBuffer(buffer, 0, 1))
         assertFalse(buffer.hasRemaining())
         val all = ByteBuffer.wrap(inner.bytes.toByteArray()).order(ByteOrder.LITTLE_ENDIAN)
-        assertEquals("each byte exactly once", 1000 * 2 * 4, all.remaining())
+        assertEquals("each byte exactly once", (1000 - held) * 2 * 4, all.remaining())
         val reference = run {
             val r = RecordingSink(); val f = FloatSink(r, emptyList()) { false }
             f.configure(AudioSink.AudioSinkConfig.Builder(pcm(C.ENCODING_PCM_24BIT, 48000, 2)).build()); f.handleBuffer(ramp24(1000), 0, 1); r.bytes.toByteArray()
@@ -105,7 +109,7 @@ class FloatSinkTest {
         sink.configure(AudioSink.AudioSinkConfig.Builder(pcm(C.ENCODING_PCM_24BIT, 48000, 2)).build())
         assertEquals(C.ENCODING_PCM_16BIT, inner.format!!.pcmEncoding)
         assertTrue(sink.handleBuffer(ramp24(500), 0, 1))
-        assertEquals(500 * 2 * 2, inner.bytes.size())
+        assertEquals((500 - held) * 2 * 2, inner.bytes.size())
     }
 
     /** 16-bit stereo sine blocks, as a decoder hands them over. */
@@ -151,8 +155,23 @@ class FloatSinkTest {
         sink.configure(config)
         repeat(10) { assertTrue(sink.handleBuffer(sine16(2400, (10 + it) * 2400), (10 + it) * 50_000L, 1)) }
         val latency = fr.spotifeur.playback.dsp.TruePeakLimiter(48000, 2).latencyFrames
-        assertEquals("both songs, nothing lost or added", 20 * 2400 * 8, inner.bytes.size())
-        assertTrue("the second song is heard", rmsDbOfFloats(inner.bytes.toByteArray().copyOfRange(10 * 2400 * 8, 20 * 2400 * 8), latency) > -20)
+        assertEquals("both songs, nothing lost or added", (20 * 2400 - held) * 8, inner.bytes.size())
+        assertTrue("the second song is heard", rmsDbOfFloats(inner.bytes.toByteArray().let { it.copyOfRange(10 * 2400 * 8, it.size) }, latency) > -20)
+    }
+
+    @Test
+    fun positionDoesNotDriftUnderATrim() {
+        // A Jam trim shortens the audio written; the position reported must still be where the music is.
+        fr.spotifeur.playback.dsp.RateTrim.rate = 1.001f
+        try {
+            val inner = RecordingSink()
+            val sink = FloatSink(inner, emptyList()) { false }
+            sink.configure(AudioSink.AudioSinkConfig.Builder(pcm(C.ENCODING_PCM_16BIT, 48000, 2)).build())
+            repeat(1000) { assertTrue(sink.handleBuffer(sine16(480, it * 480), it * 10_000L, 1)) } // 10 s
+            val heard = inner.bytes.size() / 8 * 1_000_000L / 48_000
+            assertTrue("the audio really is shorter: $heard us", heard < 9_995_000)
+            assertEquals("position tracks the media, not the shortened audio", 10_000_000.0, sink.getCurrentPositionUs(false).toDouble(), 1_000.0)
+        } finally { fr.spotifeur.playback.dsp.RateTrim.rate = 1f }
     }
 
     @Test

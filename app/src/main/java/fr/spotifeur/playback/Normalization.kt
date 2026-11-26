@@ -76,7 +76,7 @@ object TrackLoudness {
  * through untouched.
  */
 @UnstableApi
-internal class LoudnessProcessor : BaseAudioProcessor() {
+internal class LoudnessProcessor : fr.spotifeur.playback.dsp.TailingAudioProcessor() {
     @Volatile var gain: Float = 1f
     private var current = 1f
     private var reduction = 1f
@@ -96,19 +96,12 @@ internal class LoudnessProcessor : BaseAudioProcessor() {
         return inputAudioFormat
     }
 
-    override fun onFlush() { reduction = 1f; snap = true; limiter?.reset(); tailed = false }
+    override fun onFlushed() { reduction = 1f; snap = true; limiter?.reset() }
 
     override fun onReset() { limiter = null; frames = FloatArray(0) }
 
-    private var tailed = false
-
-    /**
-     * The float limiter holds its lookahead back; at the end of a stream it is let out, once: Media3's pipeline repeats
-     * queueEndOfStream on every pass after the processor before has ended, and a second tail would be silence forever.
-     */
-    override fun onQueueEndOfStream() {
-        if (tailed) return
-        tailed = true
+    /** The float limiter holds its lookahead back; at the end of a stream it is let out (once, see the base class). */
+    override fun writeTail() {
         val tail = limiter?.drain() ?: return
         replaceOutputBuffer(tail.size * 4).order(ByteOrder.LITTLE_ENDIAN).apply { tail.forEach { putFloat(it) } }.flip()
     }

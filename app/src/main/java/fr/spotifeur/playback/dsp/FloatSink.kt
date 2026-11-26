@@ -30,6 +30,8 @@ class FloatSink(inner: AudioSink, private val effects: List<AudioProcessor>, pri
     private val sink = inner
     /** Per-song gapless trimming, ahead of the chain so a song change resets it without touching the effects. */
     private val trimming = TrimmingAudioProcessor()
+    /** The listen-together trim, last before the hand-over; its skew keeps the reported position on the music. */
+    private val trim = RateTrimProcessor()
     private var pipeline: AudioProcessingPipeline? = null
     private var inputFormat: AudioProcessor.AudioFormat? = null
     private var sixteen = false
@@ -60,7 +62,7 @@ class FloatSink(inner: AudioSink, private val effects: List<AudioProcessor>, pri
             while (trimmed.hasRemaining()) { running!!.queueInput(trimmed); take(running.output, pendingTimeUs) }
         } else {
             pending = EMPTY
-            val built = ImmutableList.builder<AudioProcessor>().add(ToFloatPcmAudioProcessor()).addAll(effects)
+            val built = ImmutableList.builder<AudioProcessor>().add(ToFloatPcmAudioProcessor()).addAll(effects).add(trim)
             if (wantSixteen) built.add(Dither16Processor())
             val chain = AudioProcessingPipeline(built.build())
             try { chain.configure(incoming) } catch (e: AudioProcessor.UnhandledAudioFormatException) {
@@ -127,6 +129,12 @@ class FloatSink(inner: AudioSink, private val effects: List<AudioProcessor>, pri
 
     override fun isEnded(): Boolean = sink.isEnded() && (pipeline == null || (!pending.hasRemaining() && pipeline!!.isEnded))
 
+    /** The inner sink counts the audio written; the trim made that shorter or longer than the music by [trim]'s skew. */
+    override fun getCurrentPositionUs(sourceEnded: Boolean): Long {
+        val position = sink.getCurrentPositionUs(sourceEnded)
+        return if (pipeline == null || position == AudioSink.CURRENT_POSITION_NOT_SET) position else position + trim.skewUs
+    }
+
     override fun hasPendingData(): Boolean = pending.hasRemaining() || sink.hasPendingData()
 
     override fun flush() { pipeline?.flush(); trimming.flush(); trimmed = EMPTY; pending = EMPTY; draining = false; sink.flush() }
@@ -140,7 +148,8 @@ class FloatSink(inner: AudioSink, private val effects: List<AudioProcessor>, pri
     private fun take(out: ByteBuffer, timeUs: Long) {
         if (!out.hasRemaining()) return
         if (!pending.hasRemaining()) {
-            pendingTimeUs = timeUs
+            // On the written audio's own timeline, so the inner sink never sees the trim as a discontinuity.
+            pendingTimeUs = timeUs - trim.skewUs
             if (store.capacity() < out.remaining()) store = ByteBuffer.allocateDirect(out.remaining() * 2).order(ByteOrder.nativeOrder())
             store.clear(); store.put(out).flip(); pending = store
         } else {
