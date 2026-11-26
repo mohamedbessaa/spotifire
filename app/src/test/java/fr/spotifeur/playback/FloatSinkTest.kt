@@ -185,4 +185,27 @@ class FloatSinkTest {
         assertTrue(sink.handleBuffer(ByteBuffer.wrap(data), 0, 1))
         assertArrayEquals(data, inner.bytes.toByteArray())
     }
+
+    @Test
+    fun gaplessSongChangeDropsThePadding() {
+        // A song's encoder padding (silence the codec added at its end) must not play between two songs.
+        val inner = RecordingSink()
+        val sink = FloatSink(inner, emptyList()) { false }
+        val songA = Format.Builder().setSampleMimeType(MimeTypes.AUDIO_RAW).setPcmEncoding(C.ENCODING_PCM_16BIT)
+            .setSampleRate(48000).setChannelCount(2).setEncoderPadding(480).build()
+        sink.configure(AudioSink.AudioSinkConfig.Builder(songA).build())
+        repeat(10) { assertTrue(sink.handleBuffer(sine16(2400, it * 2400), it * 50_000L, 1)) }
+        sink.configure(AudioSink.AudioSinkConfig.Builder(pcm(C.ENCODING_PCM_16BIT, 48000, 2)).build())
+        repeat(10) { assertTrue(sink.handleBuffer(sine16(2400, (10 + it) * 2400), (10 + it) * 50_000L, 1)) }
+        assertEquals("song A without its 480 padding frames, then song B", (20 * 2400 - 480 - held) * 8, inner.bytes.size())
+    }
+
+    @Test
+    fun decodersAreNotAskedForFloat() {
+        // Some decoders (Samsung's FLAC) claim float output and deliver 16-bit: NaN noise and broken timestamps.
+        // The sink takes their usual 16-bit and makes it float itself.
+        val sink = FloatSink(RecordingSink(), emptyList()) { false }
+        assertTrue(sink.getFormatSupport(pcm(C.ENCODING_PCM_FLOAT, 44100, 2)) != AudioSink.SINK_FORMAT_SUPPORTED_DIRECTLY)
+        assertEquals(AudioSink.SINK_FORMAT_SUPPORTED_DIRECTLY, sink.getFormatSupport(pcm(C.ENCODING_PCM_16BIT, 44100, 2)))
+    }
 }

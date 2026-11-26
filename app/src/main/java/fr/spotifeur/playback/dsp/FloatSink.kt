@@ -43,8 +43,15 @@ class FloatSink(inner: AudioSink, private val effects: List<AudioProcessor>, pri
     private var draining = false
     private var store: ByteBuffer = ByteBuffer.allocateDirect(64 * 1024).order(ByteOrder.nativeOrder())
 
-    override fun getFormatSupport(format: Format): Int =
-        if (isPcm(format)) AudioSink.SINK_FORMAT_SUPPORTED_DIRECTLY else sink.getFormatSupport(format)
+    /**
+     * Any PCM, except that decoders are not asked for float: some (Samsung's FLAC) say float and deliver 16-bit, which
+     * read as float is NaN noise with broken timestamps. They keep their usual output and the chain makes it float.
+     */
+    override fun getFormatSupport(format: Format): Int = when {
+        !isPcm(format) -> sink.getFormatSupport(format)
+        format.pcmEncoding == C.ENCODING_PCM_FLOAT -> AudioSink.SINK_FORMAT_SUPPORTED_WITH_TRANSCODING
+        else -> AudioSink.SINK_FORMAT_SUPPORTED_DIRECTLY
+    }
 
     override fun supportsFormat(format: Format): Boolean = getFormatSupport(format) != AudioSink.SINK_FORMAT_UNSUPPORTED
 
@@ -58,7 +65,14 @@ class FloatSink(inner: AudioSink, private val effects: List<AudioProcessor>, pri
         // end of one song straight into the next. Only the trimming starts over: the old song's padding is dropped.
         val keep = running != null && incoming == inputFormat && wantSixteen == sixteen && !draining
         if (keep) {
-            if (trimming.isActive) { trimming.queueEndOfStream(); trimmed = trimming.output }
+            // Media3's trimmer drops the old song's padding at its end only when a new configuration is pending, so the
+            // new one is set first (as DefaultAudioSink does): configure, drain, then flush below.
+            val wasActive = trimming.isActive
+            trimming.setTrimFrameCount(format.encoderDelay, format.encoderPadding)
+            try { trimming.configure(incoming) } catch (e: AudioProcessor.UnhandledAudioFormatException) {
+                throw AudioSink.ConfigurationException(e, format)
+            }
+            if (wasActive) { trimming.queueEndOfStream(); trimmed = trimming.output }
             while (trimmed.hasRemaining()) { running!!.queueInput(trimmed); take(running.output, pendingTimeUs) }
         } else {
             pending = EMPTY
@@ -72,9 +86,11 @@ class FloatSink(inner: AudioSink, private val effects: List<AudioProcessor>, pri
             pipeline = chain; inputFormat = incoming; sixteen = wantSixteen; draining = false
         }
         trimmed = EMPTY
-        trimming.setTrimFrameCount(format.encoderDelay, format.encoderPadding)
-        try { trimming.configure(incoming) } catch (e: AudioProcessor.UnhandledAudioFormatException) {
-            throw AudioSink.ConfigurationException(e, format)
+        if (!keep) {
+            trimming.setTrimFrameCount(format.encoderDelay, format.encoderPadding)
+            try { trimming.configure(incoming) } catch (e: AudioProcessor.UnhandledAudioFormatException) {
+                throw AudioSink.ConfigurationException(e, format)
+            }
         }
         trimming.flush()
         val out = pipeline!!.outputAudioFormat
