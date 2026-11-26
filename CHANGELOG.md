@@ -1,5 +1,30 @@
 # Changelog
 
+## v1.1.3
+
+### Added
+
+- Ask to join what a friend is playing, or invite them to what you play, from their card in Friends.
+- Everyone in a Jam can play, pause, skip and seek (in the app, the notification or the headphones);
+  the Jam shows who did what last.
+- Canvas for YouTube Music and local songs, borrowed from the same recording on Spotify.
+- Settings: Automatic updates (off: no check at launch) and Check for updates.
+
+### Changed
+
+- Sound is processed in 32-bit float from the decoder to the output and ends in a true-peak limiter
+  (−0.3 dBTP): equalizer and headphone-profile boosts no longer clip.
+- Listen together stays in sync with inaudible corrections (at most 0.1%) instead of speed steps,
+  changes songs gaplessly, and holds a skip 0.5 s instead of 1.5 s.
+
+### Fixed
+
+- Cuts in a Jam: a guest no longer seeks again and again after starting a song.
+- Lyrics: the line being sung keeps its spaces, and lyrics follow the music frame by frame.
+- The Canvas pauses with the song.
+- Xiaomi phones (HyperOS) refused to install the APK ("package appears to be invalid"); releases are
+  now signed with every scheme.
+
 ## v1.1.2
 
 ### Changed

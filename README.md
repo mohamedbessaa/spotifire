@@ -113,8 +113,11 @@ A tab of its own, everything inside the app; nothing is shared through links or 
 - **Edit together**: a playlist every member can add to, remove from and reorder, with the avatar of
   who added each song. Changes from several phones at once, or made offline, merge into one list.
 - **Blend**: 50 songs from both your tastes, new every day, made only when both of you accept.
-- **Listen together (Jam)**: start from any song or playlist; each friend chooses to join, hears the
-  same moment of the same song, and gets their own queue back on leaving.
+- **Listen together (Jam)**: start from any song or playlist, invite a friend from their card, or ask
+  to join what they are playing. Everyone hears the same moment of the same song: the phones stay
+  together with inaudible corrections (at most 0.1%), and songs change gaplessly. Everyone can play,
+  pause, skip and seek, from the app, the notification or their headphones, and the Jam shows who did
+  what. Each friend gets their own queue back on leaving.
 - **Profiles** with a photo (encrypted for friends), a line about you, and what you are listening to
   (off by default).
 - **Recovery phrase**: 12 words that bring your friends back on a new phone (Friends settings).
@@ -126,6 +129,8 @@ no Spotifire server and no account to create. See [Privacy](#privacy).
 
 ## Sound
 
+- **High-precision output**: every source is processed in 32-bit float and ends in a true-peak
+  limiter (−0.3 dBTP), so equalizer boosts never clip, whatever the headphones or speaker.
 - **Loudness**: Off, Quiet, Normal or Loud (−23/−14/−11 LUFS) with a limiter, so songs play at the
   same level whatever their source.
 - **Equalizer**: bass, treble and dynamic tone, plus automatic **headphone profiles** (AutoEq).
@@ -162,10 +167,11 @@ playback of YouTube Music work without it.
 
 ## Updates
 
-Once per launch Spotifire checks the [latest release](https://github.com/mohamedbessaa/spotifire/releases/latest)
-on GitHub. When a newer version exists, a popup shows what's new with **Update now** and **Later**:
-Update now downloads the APK inside the app and opens Android's installer; Later waits for the next
-launch. There are no update notifications. See [docs/UPDATES.md](docs/UPDATES.md).
+With **Automatic updates** on (Settings), Spotifire checks the [latest release](https://github.com/mohamedbessaa/spotifire/releases/latest)
+on GitHub once per launch. When a newer version exists, a popup shows what's new with **Update now**
+and **Later**: Update now downloads the APK inside the app and opens Android's installer; Later waits
+for the next launch. With it off, nothing is checked at launch; **Check for updates** below it looks
+at any time. There are no update notifications. See [docs/UPDATES.md](docs/UPDATES.md).
 
 ---
 
