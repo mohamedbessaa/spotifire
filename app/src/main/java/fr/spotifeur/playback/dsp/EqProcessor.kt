@@ -166,6 +166,7 @@ class SpatialProcessor : BaseAudioProcessor() {
 }
 
 /** The PCM encodings the effects work in: 16-bit, and 32-bit float (the high-precision path). */
+@UnstableApi
 internal object Pcm {
     fun supported(format: AudioFormat) = format.encoding == C.ENCODING_PCM_16BIT || format.encoding == C.ENCODING_PCM_FLOAT
 }
