@@ -157,7 +157,7 @@ fun SpotifireNowPlaying(model: SpotifeurModel, navController: NavHostController,
             )
         }
         // Canvas: the track's looping video, when it has one, over the glow and under the same shade.
-        val canvasOn = ui.settings.collectAsStateWithLifecycle().value.canvas
+        val canvasOn = fr.spotifeur.data.SpotifyCanvas.ENABLED && ui.settings.collectAsStateWithLifecycle().value.canvas
         val canvasUrl by androidx.compose.runtime.produceState<String?>(null, song.id, canvasOn) {
             // The previous song's clip goes at once; the new one shows when it is known.
             value = null

@@ -9,6 +9,12 @@ import java.util.concurrent.ConcurrentHashMap
  * 0 is a still image and 4 a GIF, which the player does not show.
  */
 object SpotifyCanvas {
+    /**
+     * Parked: the clips are off and the player shows the track card. The code is kept for later; set this to true to
+     * bring them back (the player and the Settings row follow it).
+     */
+    const val ENABLED = false
+
     private val cache = ConcurrentHashMap<String, String>()
     private const val NONE = ""
 

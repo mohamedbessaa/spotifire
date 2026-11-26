@@ -230,7 +230,7 @@ private fun AppearanceSettings(model: SpotifeurModel, navController: NavHostCont
     // stay in AppSettings for old backups but have nothing to change here.
     SettingsScaffold(stringResource(R.string.settings_category_appearance_title), navController) {
         SettingsGroup(header = stringResource(R.string.settings_now_playing_section)) {
-            SwitchSettingItem(stringResource(R.string.settings_canvas_title), stringResource(R.string.settings_canvas_subtitle), s.canvas, { v -> update { it.copy(canvas = v) } }, leadingIcon = { Icon(Icons.Outlined.PlayCircle, null, tint = MaterialTheme.colorScheme.secondary) })
+            if (fr.spotifeur.data.SpotifyCanvas.ENABLED) SwitchSettingItem(stringResource(R.string.settings_canvas_title), stringResource(R.string.settings_canvas_subtitle), s.canvas, { v -> update { it.copy(canvas = v) } }, leadingIcon = { Icon(Icons.Outlined.PlayCircle, null, tint = MaterialTheme.colorScheme.secondary) })
             SwitchSettingItem(stringResource(R.string.settings_show_player_file_info_title), stringResource(R.string.settings_show_player_file_info_subtitle), s.showPlayerFileInfo, { v -> update { it.copy(showPlayerFileInfo = v) } }, leadingIcon = { Icon(painterResource(R.drawable.rounded_attach_file_24), null, tint = MaterialTheme.colorScheme.secondary) })
         }
         SettingsGroup(header = stringResource(R.string.settings_group_look), footer = stringResource(R.string.settings_glass_footer)) {
