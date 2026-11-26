@@ -101,38 +101,43 @@ object SocialBridge {
             val readAt = android.os.SystemClock.elapsedRealtime()
             val position = rendering?.currentPosition ?: model.player.exactPositionMs() ?: 0
             val playing = rendering?.isPlaying ?: model.player.isPlayingNow()
-            val rate = rendering?.playbackParameters?.speed ?: 1f
+            val rate = fr.spotifeur.playback.dsp.RateTrim.rate
             return JamPlayer.Now(SharedItems.track(track), position, playing, readAt, rate, if (rendering != null) "exo" else "ctl")
         }
         override fun upNext(): List<JSONObject> = model.player.state.value.let { s ->
             s.queue.drop(s.index + 1).take(20).filter { it.id.startsWith("spotify:track:") || it.id.startsWith("ytm:track:") }.map(SharedItems::track)
         }
-        override fun playQueue(tracks: List<JSONObject>, positionMs: Long, start: Boolean) {
-            val songs = tracks.mapNotNull(SharedItems::fromTrack).takeIf { it.isNotEmpty() } ?: return
-            val loaded = model.player.state.value
+        // Everything below is the Jam's own doing: it bypasses the guest's hand-over to the host.
+        override fun playQueue(tracks: List<JSONObject>, positionMs: Long, start: Boolean) = model.player.direct {
+            val songs = tracks.mapNotNull(SharedItems::fromTrack).takeIf { it.isNotEmpty() } ?: return@direct
+            val loaded = state.value
             // The host's song is already next here: move on to it and keep what the player preloaded.
-            if (loaded.index + 1 < loaded.queue.size && loaded.queue[loaded.index + 1].id == songs.first().id) model.player.seekToItem(loaded.index + 1)
+            if (loaded.index + 1 < loaded.queue.size && loaded.queue[loaded.index + 1].id == songs.first().id) seekToItem(loaded.index + 1)
             else model.play(songs, 0)
-            model.player.seek(positionMs.toInt())
-            if (!start) model.player.pause()
+            seek(positionMs.toInt())
+            if (!start) pause()
         }
-        override fun pause() = model.player.pause()
-        override fun resume() = model.player.resume()
-        override fun seek(positionMs: Long) = model.player.seek(positionMs.toInt())
+        override fun pause() = model.player.direct { pause() }
+        override fun resume() = model.player.direct { resume() }
+        override fun seek(positionMs: Long) = model.player.direct { seek(positionMs.toInt()) }
+        override fun next() = model.player.direct { next() }
+        override fun previous() = model.player.direct { previousTrack() }
         override fun trim(rate: Float) { fr.spotifeur.playback.dsp.RateTrim.rate = rate }
-        override fun addToQueue(track: JSONObject) { SharedItems.fromTrack(track)?.let { model.player.addToQueue(listOf(it)) } }
-        override fun saveQueue() {
-            val (queue, index) = model.player.context()
-            saved = Triple(queue, index, model.player.exactPositionMs() ?: 0)
-            model.player.pause()
+        override fun addToQueue(track: JSONObject) { SharedItems.fromTrack(track)?.let { song -> model.player.direct { addToQueue(listOf(song)) } } }
+        override fun intercept(control: GuestControl?) { model.player.guestControl = control }
+        override fun saveQueue() = model.player.direct {
+            val (queue, index) = context()
+            saved = Triple(queue, index, exactPositionMs() ?: 0)
+            pause()
         }
-        override fun restoreQueue() {
-            val (queue, index, position) = saved ?: return
+        override fun restoreQueue() = model.player.direct {
+            val (queue, index, position) = saved ?: return@direct
             saved = null
-            if (queue.isEmpty()) return
+            if (queue.isEmpty()) return@direct
             model.play(queue, index)
-            model.player.seek(position.toInt())
-            model.player.pause()
+            seek(position.toInt())
+            pause()
         }
     }
+
 }

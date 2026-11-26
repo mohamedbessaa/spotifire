@@ -31,6 +31,10 @@ interface JamPlayer {
     /** Plays the music at [rate] (within ±0.1%, inaudible) to close a small gap; 1 is as recorded. */
     fun trim(rate: Float)
     fun addToQueue(track: JSONObject)
+    fun next()
+    fun previous()
+    /** Sends this phone's music actions to [control] while the user is a guest (null: act locally again). */
+    fun intercept(control: GuestControl?)
     /** Keeps the guest's own queue aside when joining, and puts it back on leaving. */
     fun saveQueue()
     fun restoreQueue()
@@ -42,6 +46,8 @@ data class JamInvite(val session: String, val from: String, val title: String, v
 data class JamView(
     val session: String, val host: String, val hosting: Boolean, val members: List<String>, val joined: Set<String>,
     val track: JSONObject?, val playing: Boolean, val allowQueue: Boolean, val offsetKnown: Boolean,
+    /** Who last changed the music and how (member's key, "skipped"), shown to everyone under the Jam. */
+    val lastAction: Pair<String, String>? = null,
 )
 
 /**
@@ -61,6 +67,13 @@ object Jam {
     private var stateQueue: List<JSONObject> = emptyList()
     /** The guest's last readings of how far it is off the host (actual minus expected, ms). */
     private val offsets = ArrayDeque<Long>()
+    /** Host: applies the members' commands. Guest: the last action the host announced. */
+    private val applier = JamCommandApplier()
+    private var lastAction: Pair<String, String>? = null
+    private var lastCommandAt = 0L
+    /** While the user is a guest: where the notification's and headphones' buttons go instead of the player. */
+    @Volatile var remote: GuestControl? = null
+        private set
     private var allowQueue = false
     private var joined = emptySet<String>()
     private var lastFromHost = 0L
@@ -162,6 +175,9 @@ object Jam {
                     publishView(nowPlaying.track, true)
                     continue
                 }
+                if (last != null && (trackChanged || toggled || jumped) && now() - lastCommandAt > 1500) me()?.let { me ->
+                    applier.noteOwn(me, when { trackChanged -> "played ${nowPlaying.track.optString("title", "a song")}"; toggled -> if (nowPlaying.playing) "played" else "paused"; else -> "moved the song" })
+                }
                 if (trackChanged || toggled || jumped || now() - lastSent > HEARTBEAT_MS) {
                     announce(nowPlaying.track, nowPlaying.positionMs, nowPlaying.playing, startAt = null, at = hostTimeAt(nowPlaying.readAt))
                     lastSent = now()
@@ -181,7 +197,8 @@ object Jam {
         val upNext = withContext(Dispatchers.Main) { player?.upNext().orEmpty() }.take(20)
         Social.messengerOrNull()?.publishGroup(session, JSONObject().put("type", "state").put("track", track).put("pos", positionMs)
             .put("at", at).put("clock", if (NtpClock.offset != null) "ntp" else "mono").put("playing", playing).put("allowQueue", allowQueue).put("joined", JSONArray(joined.toList()))
-            .put("queue", JSONArray(upNext)).apply { startAt?.let { put("startAt", it) } }, live = true)
+            .put("queue", JSONArray(upNext)).apply { startAt?.let { put("startAt", it) } }
+            .apply { applier.lastAction?.let { (by, what) -> put("by", by).put("what", what) } }, live = true)
     }
 
     fun setAllowQueue(allowed: Boolean) { allowQueue = allowed; publishView() }
@@ -195,6 +212,10 @@ object Jam {
         stopAll(notify = true)
         withContext(Dispatchers.Main) { player?.saveQueue() }
         group = next; hosting = false; clock = JamClock(); state = null; lastFromHost = now(); hostClockNtp = false; joinedAt = now()
+        // From now on this phone's play, pause, skip and seek go to the host, which applies them for everyone.
+        val toHost = GuestControl { command -> Social.launch { sendCommand(command) } }
+        remote = toHost
+        withContext(Dispatchers.Main) { player?.intercept(toHost) }
         guard.joined(next.id, next.owner, next.members.toSet())
         Social.rewatchGroups()
         loop = Social.launchJob { NtpClock.sync(); guestLoop() }
@@ -271,6 +292,12 @@ object Jam {
         }
     }
 
+    private suspend fun sendCommand(command: JamCommand) {
+        val session = group ?: return
+        if (hosting) return
+        Social.messengerOrNull()?.publishGroup(session, command.toJson().put("cid", java.util.UUID.randomUUID().toString()), live = true)
+    }
+
     /** A guest's request to add a song; the host adds it only when guests may. */
     suspend fun suggest(track: JSONObject) {
         val session = group ?: return
@@ -289,6 +316,9 @@ object Jam {
     }
 
     private suspend fun stopAll(notify: Boolean) {
+        remote = null
+        withContext(Dispatchers.Main) { player?.intercept(null); player?.trim(1f) }
+        lastAction = null
         if (notify && group != null) {
             val session = group!!
             Social.messengerOrNull()?.publishGroup(session, JSONObject().put("type", if (hosting) "end" else "bye"), live = true)
@@ -339,6 +369,19 @@ object Jam {
                 .put("t0", body.optLong("t0")).put("host", now()), live = true)
             "hello" -> { if (message.author !in joined) { joined = joined + message.author; publishView() } }
             "bye" -> { joined = joined - message.author; publishView() }
+            "cmd" -> {
+                // Play, pause, skip and seek are everyone's; adding songs still follows the host's switch.
+                if (body.optString("do") == "add" && !allowQueue) return
+                val applied = withContext(Dispatchers.Main) { player?.let { applier.apply(it, message.author, body) } == true }
+                if (applied) {
+                    lastCommandAt = now()
+                    // Everyone hears the change at once, not at the next heartbeat.
+                    withContext(Dispatchers.Main) { observe(player?.now()) }?.let { p ->
+                        announce(p.track, p.positionMs, p.playing, startAt = null, at = hostTimeAt(p.readAt))
+                        publishView(p.track, p.playing)
+                    }
+                }
+            }
             "queue-add" -> if (allowQueue) body.optJSONObject("track")?.let { t ->
                 if (SharedItems.decode(JSONObject().put("kind", "song").put("title", t.optString("title", "Song")).put("id", t.optString("id"))) != null) {
                     withContext(Dispatchers.Main) { player?.addToQueue(t) }
@@ -357,6 +400,7 @@ object Jam {
                         body.optLong("startAt").takeIf { body.has("startAt") })
                     hostClockNtp = body.optString("clock") == "ntp"
                     if (stateTrack?.optString("id") != id) offsets.clear()
+                    lastAction = body.optString("by").takeIf(String::isNotEmpty)?.let { it to body.optString("what") }
                     stateTrack = track
                     stateQueue = body.optJSONArray("queue")?.let { a -> (0 until a.length()).mapNotNull(a::optJSONObject) }.orEmpty()
                     allowQueue = body.optBoolean("allowQueue")
@@ -372,7 +416,8 @@ object Jam {
     private fun publishView(track: JSONObject? = mutableView.value?.track, playing: Boolean = mutableView.value?.playing ?: false) {
         val session = group
         mutableView.value = session?.let {
-            JamView(it.id, it.owner, hosting, it.members, joined, track, playing, allowQueue, hosting || (if (hostUsesNtp) NtpClock.offset != null else clock.offsetMs != null))
+            JamView(it.id, it.owner, hosting, it.members, joined, track, playing, allowQueue, hosting || (if (hostUsesNtp) NtpClock.offset != null else clock.offsetMs != null),
+                if (hosting) applier.lastAction else lastAction)
         }
     }
 

@@ -181,6 +181,22 @@ class SpotifeurPlaybackService : MediaSessionService() {
                 override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult =
                     if (controller.packageName == packageName || controller.isTrusted) super.onConnect(session, controller)
                     else MediaSession.ConnectionResult.reject()
+
+                // A guest in a Jam: the notification's and headphones' buttons steer the Jam, through the host, which
+                // then moves every phone (this one included) once; the app's own controls are handled in SpotifyPlayer.
+                override fun onPlayerCommandRequest(session: MediaSession, controller: MediaSession.ControllerInfo, playerCommand: Int): Int {
+                    val remote = fr.spotifeur.social.Jam.remote
+                    if (remote == null || controller.packageName == packageName) return super.onPlayerCommandRequest(session, controller, playerCommand)
+                    val command = when (playerCommand) {
+                        androidx.media3.common.Player.COMMAND_PLAY_PAUSE ->
+                            if (session.player.playWhenReady) fr.spotifeur.social.JamCommand.Pause else fr.spotifeur.social.JamCommand.Play
+                        androidx.media3.common.Player.COMMAND_SEEK_TO_NEXT, androidx.media3.common.Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM -> fr.spotifeur.social.JamCommand.Next
+                        androidx.media3.common.Player.COMMAND_SEEK_TO_PREVIOUS, androidx.media3.common.Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM -> fr.spotifeur.social.JamCommand.Previous
+                        else -> return super.onPlayerCommandRequest(session, controller, playerCommand)
+                    }
+                    remote.send(command)
+                    return androidx.media3.session.SessionResult.RESULT_ERROR_NOT_SUPPORTED
+                }
             }).build()
     }
     private fun refreshHeadphones() {

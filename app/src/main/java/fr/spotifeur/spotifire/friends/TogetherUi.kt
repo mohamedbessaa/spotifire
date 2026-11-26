@@ -130,6 +130,11 @@ internal fun JamCard(snap: SocialSnapshot) {
                 else -> "In sync"
             }, color = Color.White, fontSize = 13.sp, modifier = Modifier.weight(1f))
         }
+        // Everyone steers the Jam; this says who did what last, so clashes are sorted out between friends.
+        jam.lastAction?.let { (who, what) ->
+            Text("${if (who == snap.me) "You" else nameOf(snap, who)} $what", color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp,
+                maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp))
+        }
         if (jam.hosting) SwitchRow("Friends can add songs", "They suggest songs to your queue", jam.allowQueue) { Jam.setAllowQueue(it) }
         PillButton(if (jam.hosting) "End the Jam" else "Leave", filled = false, modifier = Modifier.padding(top = 8.dp)) { Social.launch { Jam.leave() } }
     }

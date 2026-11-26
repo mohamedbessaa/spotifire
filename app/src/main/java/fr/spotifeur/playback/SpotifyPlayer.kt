@@ -95,9 +95,25 @@ class SpotifyPlayer(context: Context, scope: CoroutineScope) : AutoCloseable {
         }, ContextCompat.getMainExecutor(context))
         scope.launch { while (true) { delay(300); controller?.let(::update) } }
     }
+    /**
+     * While the user is a guest in a Jam, music actions go to the host (who applies them for everyone) instead of this
+     * player; the Jam's own corrections run inside [direct], which bypasses it.
+     */
+    @Volatile var guestControl: fr.spotifeur.social.GuestControl? = null
+    private var bypass = false
+
+    fun direct(block: SpotifyPlayer.() -> Unit) { bypass = true; try { block() } finally { bypass = false } }
+
+    private fun toHost(command: () -> fr.spotifeur.social.JamCommand?): Boolean {
+        val control = guestControl.takeUnless { bypass } ?: return false
+        command()?.let(control::send)
+        return true
+    }
+
     fun play(queue: List<Music>, index: Int = 0) {
         val selected = queue.getOrNull(index) ?: return
         if (!selected.isPlayableTrack()) return
+        if (toHost { fr.spotifeur.social.JamCommand.PlayTrack(fr.spotifeur.social.SharedItems.track(selected)) }) return
         val playable = queue.filter(Music::isPlayableTrack)
         val first = queue.take(index).count(Music::isPlayableTrack)
         // Shuffle reorders the queue itself: the chosen track plays first and every other one follows.
@@ -141,6 +157,7 @@ class SpotifyPlayer(context: Context, scope: CoroutineScope) : AutoCloseable {
     fun addToQueue(tracks: List<Music>) { controller?.let { player ->
         val valid = tracks.filter(Music::isPlayableTrack)
         if (valid.isEmpty()) return
+        guestControl.takeUnless { bypass }?.let { control -> valid.forEach { control.send(fr.spotifeur.social.JamCommand.Add(fr.spotifeur.social.SharedItems.track(it))) }; return }
         if (player.mediaItemCount == 0) { play(valid, 0); return }
         val position = player.currentMediaItemIndex + 1 + userQueue(player).size
         player.addMediaItems(position, valid.map { mediaItem(it, queued = true) })
@@ -150,6 +167,7 @@ class SpotifyPlayer(context: Context, scope: CoroutineScope) : AutoCloseable {
     fun playNext(tracks: List<Music>) { controller?.let { player ->
         val valid = tracks.filter(Music::isPlayableTrack)
         if (valid.isEmpty()) return
+        guestControl.takeUnless { bypass }?.let { control -> valid.forEach { control.send(fr.spotifeur.social.JamCommand.Add(fr.spotifeur.social.SharedItems.track(it))) }; return }
         if (player.mediaItemCount == 0) { play(valid, 0); return }
         player.addMediaItems(player.currentMediaItemIndex + 1, valid.map { mediaItem(it, queued = true) })
         queueChanged = true; update(player)
@@ -182,15 +200,17 @@ class SpotifyPlayer(context: Context, scope: CoroutineScope) : AutoCloseable {
     }
     fun toggle() {
         val player = controller ?: return
+        if (toHost { if (player.playWhenReady) fr.spotifeur.social.JamCommand.Pause else fr.spotifeur.social.JamCommand.Play }) return
         togglePlayback(player)
     }
-    fun next() { controller?.seekToNextMediaItem() }
-    fun previous() { controller?.seekToPrevious() }
+    fun next() { if (toHost { fr.spotifeur.social.JamCommand.Next }) return; controller?.seekToNextMediaItem() }
+    fun previous() { if (toHost { fr.spotifeur.social.JamCommand.Previous }) return; controller?.seekToPrevious() }
     fun previousTrack() {
+        if (toHost { fr.spotifeur.social.JamCommand.Previous }) return
         val player = controller ?: return
         if (player.hasPreviousMediaItem()) player.seekToPreviousMediaItem() else player.seekTo(0)
     }
-    fun seek(positionMs: Int) { controller?.let { player ->
+    fun seek(positionMs: Int) { if (toHost { fr.spotifeur.social.JamCommand.Seek(positionMs.toLong()) }) return; controller?.let { player ->
         val failed = player.playerError != null
         player.seekTo(positionMs.coerceAtLeast(0).toLong())
         if (failed) player.prepare()
@@ -286,11 +306,11 @@ class SpotifyPlayer(context: Context, scope: CoroutineScope) : AutoCloseable {
         before = emptyList(); after = emptyList()
         controller?.stop(); controller?.clearMediaItems(); mutableState.value = Playback(shuffle = ShuffleMemory.enabled)
     }
-    fun pause() { controller?.pause() }
+    fun pause() { if (toHost { fr.spotifeur.social.JamCommand.Pause }) return; controller?.pause() }
     // Listen together needs the exact position (the state is refreshed every 300 ms) and small speed nudges.
     fun exactPositionMs(): Long? = controller?.currentPosition
     fun isPlayingNow(): Boolean = controller?.isPlaying == true
-    fun resume() { controller?.play() }
+    fun resume() { if (toHost { fr.spotifeur.social.JamCommand.Play }) return; controller?.play() }
     fun setSpeed(rate: Float) { controller?.let { if (it.playbackParameters.speed != rate) it.setPlaybackSpeed(rate) } }
     fun setVolume(volume: Float) { controller?.volume = volume }
     fun volume(): Float = controller?.volume ?: 1f
