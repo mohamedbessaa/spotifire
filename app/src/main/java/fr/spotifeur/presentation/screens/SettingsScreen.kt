@@ -1,6 +1,8 @@
 package fr.spotifeur.presentation.screens
 
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.SystemUpdate
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.SignalCellularAlt
 import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material.icons.rounded.Search
@@ -175,6 +177,29 @@ fun SettingsScreen(model: SpotifeurModel, navController: NavHostController) {
             SettingsRow(stringResource(R.string.settings_storage_title), leadingIcon = { glyph(Icons.Rounded.Storage) }, onClick = { open("storage") })
             SettingsRow(stringResource(R.string.settings_category_backup_title), leadingIcon = { glyph(Icons.Rounded.Backup) }, onClick = { open("backup") })
         }
+        UpdateSettings(settings.autoUpdate, { on -> model.ui.updateSettings { it.copy(autoUpdate = on) } }, glyph)
+    }
+}
+
+/** Automatic updates on: checked at every start. Off: never checked unless asked here. */
+@Composable
+private fun UpdateSettings(auto: Boolean, onAuto: (Boolean) -> Unit, glyph: @Composable (ImageVector) -> Unit) {
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var result by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<fr.spotifeur.update.AppUpdateChecker.CheckResult?>(null) }
+    var checking by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    val version = fr.spotifeur.BuildConfig.VERSION_NAME
+    val status = when {
+        checking -> stringResource(R.string.settings_updates_checking)
+        result == fr.spotifeur.update.AppUpdateChecker.CheckResult.UP_TO_DATE -> stringResource(R.string.settings_updates_current, version)
+        result == fr.spotifeur.update.AppUpdateChecker.CheckResult.FAILED -> stringResource(R.string.settings_updates_failed)
+        else -> stringResource(R.string.settings_updates_version, version)
+    }
+    SettingsGroup {
+        SwitchSettingItem(stringResource(R.string.settings_updates_auto_title), stringResource(R.string.settings_updates_auto_subtitle), auto, onAuto,
+            leadingIcon = { glyph(Icons.Rounded.SystemUpdate) })
+        SettingsRow(stringResource(R.string.settings_updates_check), status, leadingIcon = { glyph(Icons.Rounded.Refresh) }, onClick = {
+            if (!checking) scope.launch { checking = true; result = fr.spotifeur.update.AppUpdateChecker.checkNow(); checking = false }
+        })
     }
 }
 

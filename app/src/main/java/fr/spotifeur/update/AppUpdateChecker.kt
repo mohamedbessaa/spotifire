@@ -41,8 +41,17 @@ object AppUpdateChecker {
     private val mutableDownload = MutableStateFlow<DownloadState>(DownloadState.Idle)
     val download = mutableDownload.asStateFlow()
     @Volatile private var cancelled = false
+    /** Raised by a manual check that finds an update, so the popup shows again even after Remind Me Later. */
+    private val mutableOffers = MutableStateFlow(0)
+    val offers = mutableOffers.asStateFlow()
 
-    suspend fun check() = withContext(Dispatchers.IO) {
+    enum class CheckResult { UP_TO_DATE, AVAILABLE, FAILED }
+
+    /** The manual check from Settings: same as at launch, and an update found is offered right away. */
+    suspend fun checkNow(): CheckResult = check().also { if (it == CheckResult.AVAILABLE) mutableOffers.value++ }
+
+    suspend fun check(): CheckResult = withContext(Dispatchers.IO) {
+        var result = CheckResult.FAILED
         runCatching {
             val body = http.newCall(Request.Builder().url(latestReleaseUrl).header("Accept", "application/vnd.github+json").build())
                 .execute().use { if (it.isSuccessful) it.body?.string() else null } ?: return@runCatching
@@ -50,11 +59,14 @@ object AppUpdateChecker {
             if (release.optBoolean("draft") || release.optBoolean("prerelease")) return@runCatching
             val tag = release.optString("tag_name").takeIf(String::isNotBlank) ?: return@runCatching
             val latest = tag.removePrefix("v")
+            result = CheckResult.UP_TO_DATE
             if (isNewer(latest, BuildConfig.VERSION_NAME)) {
+                result = CheckResult.AVAILABLE
                 mutableAvailable.value = UpdateInfo(latest, release.optString("html_url"), apkAssetUrl(release, Build.SUPPORTED_ABIS.toList()),
                     release.optString("body").takeIf(String::isNotBlank))
             }
         }
+        result
     }
 
     /** A downloaded update is only "Install now" for the session that downloaded it; the next launch starts clean. */

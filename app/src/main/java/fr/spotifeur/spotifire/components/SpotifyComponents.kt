@@ -371,16 +371,18 @@ fun ProfileAvatar(model: fr.spotifeur.SpotifeurModel, size: androidx.compose.ui.
  */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
-fun CanvasVideo(url: String, modifier: Modifier = Modifier) {
+fun CanvasVideo(url: String, playing: Boolean, modifier: Modifier = Modifier) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val player = remember(url) {
         androidx.media3.exoplayer.ExoPlayer.Builder(context).build().apply {
             volume = 0f
             repeatMode = androidx.media3.common.Player.REPEAT_MODE_ALL
             setMediaItem(androidx.media3.common.MediaItem.fromUri(url))
-            prepare(); playWhenReady = true
+            prepare()
         }
     }
+    // The clip moves with the music: it stops when the song pauses (a tap, or headphones that pause) and goes on with it.
+    androidx.compose.runtime.LaunchedEffect(player, playing) { player.playWhenReady = playing }
     androidx.compose.runtime.DisposableEffect(player) { onDispose { player.release() } }
     Box(modifier.clipToBounds(), contentAlignment = Alignment.Center) {
         // One surface per player: an AndroidView's factory runs once, so without the key a new song's player was

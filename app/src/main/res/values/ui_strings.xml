@@ -465,4 +465,11 @@
     <string name="settings_glass_title">Frosted bars</string>
     <string name="settings_glass_subtitle">The mini player and tabs over a blur of the screen behind</string>
     <string name="settings_glass_footer">Off keeps Spotify\'s solid black bar.</string>
+    <string name="settings_updates_auto_title">Automatic updates</string>
+    <string name="settings_updates_auto_subtitle">Look for a new version each time Spotifire starts</string>
+    <string name="settings_updates_check">Check for updates</string>
+    <string name="settings_updates_checking">Checking…</string>
+    <string name="settings_updates_current">You have the latest version (%1$s)</string>
+    <string name="settings_updates_version">Version %1$s</string>
+    <string name="settings_updates_failed">Couldn\'t check. Try again when you\'re online.</string>
 </resources>

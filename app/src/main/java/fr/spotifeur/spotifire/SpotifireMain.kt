@@ -102,11 +102,16 @@ fun SpotifireMain(model: SpotifeurModel) {
         fr.spotifeur.social.Social.openFriends.resetReplayCache()
         ui.collapsePlayerSheet(); navController.navigateToTopLevelSafely(SpotifireRoutes.FRIENDS)
     } }
-    // Updates from GitHub releases: checked once per launch, offered once per launch; Later waits for the next one.
+    // Updates from GitHub releases: with automatic updates on, checked and offered once per launch (Later waits for the
+    // next one); Settings > Check for updates offers one again at any time.
     val context = androidx.compose.ui.platform.LocalContext.current
-    LaunchedEffect(Unit) { fr.spotifeur.update.AppUpdateChecker.clearCache(context); fr.spotifeur.update.AppUpdateChecker.check() }
+    LaunchedEffect(Unit) {
+        fr.spotifeur.update.AppUpdateChecker.clearCache(context)
+        if (ui.settings.value.autoUpdate) fr.spotifeur.update.AppUpdateChecker.check()
+    }
     val update by fr.spotifeur.update.AppUpdateChecker.available.collectAsStateWithLifecycle()
-    var updateDismissed by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    val updateOffer by fr.spotifeur.update.AppUpdateChecker.offers.collectAsStateWithLifecycle()
+    var updateDismissed by androidx.compose.runtime.saveable.rememberSaveable(updateOffer) { mutableStateOf(false) }
     val sending by ui.sendRequests.collectAsStateWithLifecycle()
     sending?.let { (item, mode) ->
         fr.spotifeur.spotifire.friends.SendToFriendsSheet(model, item, mode,

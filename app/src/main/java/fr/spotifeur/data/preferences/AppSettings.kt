@@ -86,6 +86,8 @@ data class AppSettings(
     val automix: Boolean = false,
     /** Frosted glass under the mini player and the tabs, instead of solid black. */
     val glassBars: Boolean = false,
+    /** Look for a new version on GitHub each time the app starts. */
+    val autoUpdate: Boolean = true,
 ) {
     fun actions(page: DetailPage): List<ActionSlot> =
         DetailActions.decode(page, if (page == DetailPage.ALBUM) albumActions else playlistActions)
@@ -114,6 +116,7 @@ data class AppSettings(
         .put("playbackSpeed", playbackSpeed.toDouble()).put("keepPitch", keepPitch).put("crossfadeSeconds", crossfadeSeconds)
             .put("spatialAudio", spatialAudio).put("toneBass", toneBass).put("toneTreble", toneTreble)
             .put("toneDynamic", toneDynamic).put("headphoneEq", headphoneEq).put("canvas", canvas).put("automix", automix).put("glassBars", glassBars)
+            .put("autoUpdate", autoUpdate)
 
     companion object {
         const val THEME_SYSTEM = "system"
@@ -187,6 +190,7 @@ data class AppSettings(
                 canvas = json.optBoolean("canvas", d.canvas),
                 automix = json.optBoolean("automix", d.automix),
                 glassBars = json.optBoolean("glassBars", d.glassBars),
+                autoUpdate = json.optBoolean("autoUpdate", d.autoUpdate),
             )
         }
     }

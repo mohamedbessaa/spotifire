@@ -115,6 +115,8 @@ fun SpotifireNowPlaying(model: SpotifeurModel, navController: NavHostController,
     val state by ui.stablePlayerState.collectAsStateWithLifecycle()
     val song = state.currentSong ?: run { LaunchedEffect(Unit) { onClose() }; return }
     val position by ui.currentPlaybackPosition.collectAsStateWithLifecycle()
+    // Lyrics follow the music frame by frame; the player only reports its position every 300 ms.
+    val lyricsPosition = rememberSmoothPosition(position, state.isPlaying)
     val favorite by ui.isCurrentSongFavorite.collectAsStateWithLifecycle()
     val playerUi by ui.playerUiState.collectAsStateWithLifecycle()
     val queue by ui.queueFlow.collectAsStateWithLifecycle()
@@ -162,7 +164,7 @@ fun SpotifireNowPlaying(model: SpotifeurModel, navController: NavHostController,
             value = if (canvasOn) fr.spotifeur.data.SpotifyCanvas.videoFor(song.id) else null
         }
         val canvas = canvasUrl?.takeIf { pane == PlayerPane.Player }
-        if (canvas != null) fr.spotifeur.spotifire.components.CanvasVideo(canvas, Modifier.fillMaxSize())
+        if (canvas != null) fr.spotifeur.spotifire.components.CanvasVideo(canvas, state.isPlaying, Modifier.fillMaxSize())
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(
             0f to Color.Black.copy(alpha = 0.25f), 0.35f to Color.Transparent, 0.62f to Color.Black.copy(alpha = 0.35f), 1f to Color.Black.copy(alpha = 0.9f),
         )))
@@ -192,7 +194,7 @@ fun SpotifireNowPlaying(model: SpotifeurModel, navController: NavHostController,
                     Controls(ui, state.isPlaying, state.isBuffering, state.isShuffleEnabled, state.repeatMode, state.isSmartShuffle)
                 }
                 PlayerPane.Lyrics -> Column(Modifier.weight(1f).padding(horizontal = 20.dp).navigationBarsPadding()) {
-                    LyricsPane(state.lyrics, state.isLoadingLyrics, position, tint, Modifier.weight(1f)) { ui.seekTo(it) }
+                    LyricsPane(state.lyrics, state.isLoadingLyrics, lyricsPosition, tint, Modifier.weight(1f)) { ui.seekTo(it) }
                     SeekBar(position, state.totalDuration) { ui.seekTo(it) }
                     Controls(ui, state.isPlaying, state.isBuffering, state.isShuffleEnabled, state.repeatMode, state.isSmartShuffle)
                 }
@@ -229,7 +231,7 @@ fun SpotifireNowPlaying(model: SpotifeurModel, navController: NavHostController,
                         }
                         Spacer(Modifier.weight(1f))
                         // The line being sung right now, as Spotify shows it over the Canvas.
-                        val line = state.lyrics?.synced?.getOrNull(activeLine(state.lyrics, position))?.line?.takeIf(String::isNotBlank)
+                        val line = state.lyrics?.synced?.getOrNull(activeLine(state.lyrics, lyricsPosition))?.line?.takeIf(String::isNotBlank)
                         if (line != null) Text(line, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, lineHeight = 24.sp,
                             maxLines = 2, overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.padding(bottom = 16.dp).quietClick { pane = PlayerPane.Lyrics })
@@ -277,7 +279,7 @@ fun SpotifireNowPlaying(model: SpotifeurModel, navController: NavHostController,
                     }
                     // Below the fold: the lyrics card, then some room.
                     Column(Modifier.padding(horizontal = 16.dp)) {
-                        LyricsPreview(state.lyrics, position, tint) { pane = PlayerPane.Lyrics }
+                        LyricsPreview(state.lyrics, lyricsPosition, tint) { pane = PlayerPane.Lyrics }
                         Spacer(Modifier.height(48.dp))
                     }
                 }
@@ -433,6 +435,23 @@ private fun QueuePane(
     }
 }
 
+/**
+ * The song position advanced every frame while playing, between the player's readings (every 300 ms). A reading close
+ * to the running estimate keeps it, so the lyrics never step back; a seek or a pause takes the reading as it is.
+ */
+@Composable
+private fun rememberSmoothPosition(reported: Long, playing: Boolean): Long {
+    var smooth by androidx.compose.runtime.remember { androidx.compose.runtime.mutableLongStateOf(reported) }
+    androidx.compose.runtime.LaunchedEffect(reported, playing) {
+        val base = if (playing && kotlin.math.abs(smooth - reported) < 150) smooth else reported
+        smooth = base
+        if (!playing) return@LaunchedEffect
+        val start = androidx.compose.runtime.withFrameNanos { it }
+        while (true) { val frame = androidx.compose.runtime.withFrameNanos { it }; smooth = base + (frame - start) / 1_000_000 }
+    }
+    return smooth
+}
+
 /** Index of the synced line being sung at [position]. */
 private fun activeLine(lyrics: Lyrics?, position: Long): Int {
     val lines = lyrics?.synced ?: return -1
@@ -478,7 +497,9 @@ private fun LyricsPane(lyrics: Lyrics?, loading: Boolean, position: Long, tint: 
                     val words = line.words
                     // The line being sung fills word by word when the lyrics carry word timing.
                     val text = if (i == active && !words.isNullOrEmpty()) androidx.compose.ui.text.buildAnnotatedString {
-                        words.forEach { word ->
+                        words.forEachIndexed { index, word ->
+                            // Words are stored trimmed; the space between two words comes back here.
+                            if (index > 0 && word.startsNewWord) append(' ')
                             withStyle(androidx.compose.ui.text.SpanStyle(color = if (word.time <= position) Color.White else upcoming)) { append(word.word) }
                         }
                     } else androidx.compose.ui.text.AnnotatedString(line.line.ifBlank { "♪" })
