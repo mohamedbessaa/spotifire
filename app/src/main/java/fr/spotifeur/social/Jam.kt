@@ -22,6 +22,8 @@ interface JamPlayer {
         val rate: Float = 1f, val source: String = "ctl", val rawMs: Long = positionMs,
         /** Waiting for audio (loading after a seek or a new song) while meant to play. */
         val buffering: Boolean = false,
+        /** The length of what really plays (a copy can differ from the catalogue); 0 when not known yet. */
+        val durationMs: Long = 0,
     )
     fun now(): Now?
     fun upNext(): List<JSONObject>
@@ -69,6 +71,8 @@ object Jam {
     private var stateQueue: List<JSONObject> = emptyList()
     /** The guest's last readings of how far it is off the host (actual minus expected, ms). */
     private val offsets = ArrayDeque<Long>()
+    /** Set from the message thread; [offsets] itself is only touched on the main thread. */
+    @Volatile private var offsetsStale = false
     /** Host: applies the members' commands. Guest: the last action the host announced. */
     private val applier = JamCommandApplier()
     private var lastAction: Pair<String, String>? = null
@@ -172,7 +176,7 @@ object Jam {
                 val jumped = last != null && !trackChanged && kotlin.math.abs(nowPlaying.positionMs - (last.positionMs + if (last.playing) elapsed else 0)) > 1500
                 // A song that ended on its own continues gaplessly: the guests have the next one preloaded and switch at
                 // the same moment. A skip is held briefly on both phones so the guests can load the new song.
-                val ended = last?.let { l -> l.track.optLong("durationMs").let { d -> d > 0 && l.positionMs >= d - 1_000 } } == true
+                val ended = last?.let { l -> (l.durationMs.takeIf { it > 0 } ?: l.track.optLong("durationMs")).let { d -> d > 0 && l.positionMs >= d - 1_000 } } == true
                 if (trackChanged && last != null && nowPlaying.playing && !ended) {
                     withContext(Dispatchers.Main) { player?.pause(); player?.seek(0) }
                     val startAt = hostTime() + SKIP_HOLD_MS
@@ -242,7 +246,8 @@ object Jam {
         withContext(Dispatchers.Main) { player?.saveQueue() }
         group = next; hosting = false; clock = JamClock(); state = null; lastFromHost = now(); hostClockNtp = false; joinedAt = now()
         // From now on this phone's play, pause, skip and seek go to the host, which applies them for everyone.
-        val toHost = GuestControl { command -> Social.launch { sendCommand(command) } }
+        // A host quiet for 15 s (its heartbeat is 5 s) may be gone: the phone then acts on its own, so pause still works.
+        val toHost = GuestControl { command -> (now() - lastFromHost < HOST_QUIET_MS).also { if (it) Social.launch { sendCommand(command) } } }
         remote = toHost
         withContext(Dispatchers.Main) { player?.intercept(toHost) }
         guard.joined(next.id, next.owner, next.members.toSet())
@@ -284,6 +289,9 @@ object Jam {
         val hostNow = hostNowEstimate() ?: return
         withContext(Dispatchers.Main) {
             val p = player ?: return@withContext
+            if (offsetsStale) { offsets.clear(); offsetsStale = false }
+            // The host has gone quiet: do not keep steering this phone to a state that may be long gone.
+            if (now() - lastFromHost > HOST_QUIET_MS) return@withContext
             val current = observe(p.now())
             // Expected where the host is at the very moment our own position was read.
             // Never past the end: a bad estimate must not run the song out.
@@ -292,7 +300,8 @@ object Jam {
             val shouldPlay = target.startAtHostTime?.let { hostNow >= it } ?: target.playing
             if (current?.track?.optString("id") != target.trackId) {
                 // The song the host just moved on from, ending here too: the preloaded next one takes over by itself.
-                val endingHere = current != null && current.playing && current.track.optLong("durationMs").let { d -> d > 0 && current.positionMs >= d - 1_500 }
+                val endingHere = current != null && current.playing &&
+                    (current.durationMs.takeIf { it > 0 } ?: current.track.optLong("durationMs")).let { d -> d > 0 && current.positionMs >= d - 1_500 }
                 if (endingHere && stateQueue.isNotEmpty()) return@withContext
                 p.playQueue(listOf(track) + stateQueue, expected + seekLead, start = shouldPlay); seekedAt = now(); offsets.clear()
                 return@withContext
@@ -440,7 +449,7 @@ object Jam {
                     state = JamState(session.id, id, body.optLong("pos"), body.optLong("at"), body.optBoolean("playing"),
                         body.optLong("startAt").takeIf { body.has("startAt") })
                     hostClockNtp = body.optString("clock") == "ntp"
-                    if (stateTrack?.optString("id") != id) offsets.clear()
+                    if (stateTrack?.optString("id") != id) offsetsStale = true
                     lastAction = body.optString("by").takeIf(String::isNotEmpty)?.let { it to body.optString("what") }
                     stateTrack = track
                     stateQueue = body.optJSONArray("queue")?.let { a -> (0 until a.length()).mapNotNull(a::optJSONObject) }.orEmpty()
@@ -465,6 +474,7 @@ object Jam {
     private fun publishInvites() { mutableInvites.value = invites.values.map { it.first } }
 
     private const val SKIP_HOLD_MS = 500L
+    private const val HOST_QUIET_MS = 15_000L
     private const val HEARTBEAT_MS = 5000L
     private const val HOST_GONE_MS = 10 * 60 * 1000L
     private const val NTP_EVERY_MS = 60_000L

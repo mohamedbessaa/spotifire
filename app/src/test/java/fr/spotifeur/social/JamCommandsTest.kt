@@ -17,7 +17,8 @@ class JamCommandsTest {
         var playing = true
         override fun now() = JamPlayer.Now(JSONObject().put("id", "spotify:track:abc"), 1000, playing, readAt = 0)
         override fun upNext() = emptyList<JSONObject>()
-        override fun playQueue(tracks: List<JSONObject>, positionMs: Long, start: Boolean) { calls += "playQueue ${tracks.first().optString("id")}" ; playing = start }
+        override fun playQueue(tracks: List<JSONObject>, positionMs: Long, start: Boolean) {
+            calls += "playQueue ${tracks.first().optString("id")}" + if (tracks.size > 1) " +${tracks.size - 1}" else ""; playing = start }
         override fun pause() { calls += "pause"; playing = false }
         override fun resume() { calls += "resume"; playing = true }
         override fun seek(positionMs: Long) { calls += "seek $positionMs" }
@@ -73,5 +74,18 @@ class JamCommandsTest {
         assertTrue(player.playing)
         assertEquals("b", applier.lastAction?.first)
         assertEquals("played", applier.lastAction?.second)
+    }
+
+    @Test
+    fun playingASongKeepsWhatFollows() {
+        // A guest who taps track 3 of an album means "play from here", not "play this one song and stop".
+        val t2 = JSONObject().put("id", "spotify:track:def").put("title", "Two")
+        val t3 = JSONObject().put("id", "ytm:track:ghi").put("title", "Three")
+        val command = JamCommand.PlayTrack(track, listOf(t2, t3))
+        val back = JamCommand.parse(JSONObject(command.toJson().toString())) as JamCommand.PlayTrack
+        assertEquals(listOf("spotify:track:def", "ytm:track:ghi"), back.next.map { it.optString("id") })
+        val player = FakePlayer()
+        JamCommandApplier().apply(player, "a", command.toJson().put("cid", "x"))
+        assertEquals(listOf("playQueue spotify:track:abc +2"), player.calls)
     }
 }

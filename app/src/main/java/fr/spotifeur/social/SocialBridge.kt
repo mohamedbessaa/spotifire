@@ -104,7 +104,9 @@ object SocialBridge {
             // The playback speed, not the Jam's trim: the trim is a hair the position filter absorbs.
             val rate = rendering?.playbackParameters?.speed ?: 1f
             val buffering = rendering?.let { it.playWhenReady && it.playbackState == androidx.media3.common.Player.STATE_BUFFERING } == true
-            return JamPlayer.Now(SharedItems.track(track), position, playing, readAt, rate, if (rendering != null) "exo" else "ctl", buffering = buffering)
+            val duration = rendering?.duration?.takeIf { it != androidx.media3.common.C.TIME_UNSET && it > 0 } ?: 0
+            return JamPlayer.Now(SharedItems.track(track), position, playing, readAt, rate, if (rendering != null) "exo" else "ctl",
+                buffering = buffering, durationMs = duration)
         }
         override fun upNext(): List<JSONObject> = model.player.state.value.let { s ->
             s.queue.drop(s.index + 1).take(20).filter { it.id.startsWith("spotify:track:") || it.id.startsWith("ytm:track:") }.map(SharedItems::track)
@@ -115,7 +117,7 @@ object SocialBridge {
             val loaded = state.value
             // The host's song is already next here: move on to it and keep what the player preloaded.
             if (loaded.index + 1 < loaded.queue.size && loaded.queue[loaded.index + 1].id == songs.first().id) seekToItem(loaded.index + 1)
-            else model.play(songs, 0)
+            else play(model.withLocalFiles(songs), 0, shuffle = false) // the host's order, never this phone's shuffle
             seek(positionMs.toInt())
             if (!start) pause()
         }

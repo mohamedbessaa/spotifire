@@ -9,7 +9,8 @@ sealed interface JamCommand {
     data class Seek(val positionMs: Long) : JamCommand
     data object Next : JamCommand
     data object Previous : JamCommand
-    data class PlayTrack(val track: JSONObject) : JamCommand
+    /** Play [track] and go on with [next] (the rest of the album or playlist it was picked from). */
+    data class PlayTrack(val track: JSONObject, val next: List<JSONObject> = emptyList()) : JamCommand
     data class Add(val track: JSONObject) : JamCommand
 
     /** How the others read it: "Nova skipped". */
@@ -30,7 +31,7 @@ sealed interface JamCommand {
             is Seek -> put("do", "seek").put("pos", c.positionMs)
             Next -> put("do", "next")
             Previous -> put("do", "previous")
-            is PlayTrack -> put("do", "play-track").put("track", c.track)
+            is PlayTrack -> put("do", "play-track").put("track", c.track).put("next", org.json.JSONArray(c.next))
             is Add -> put("do", "add").put("track", c.track)
         }
     }
@@ -38,14 +39,16 @@ sealed interface JamCommand {
     companion object {
         /** Null for anything unknown or incomplete: a command from a newer or broken client is ignored. */
         fun parse(json: JSONObject): JamCommand? {
-            fun track() = json.optJSONObject("track")?.takeIf { it.optString("id").let { id -> id.startsWith("spotify:track:") || id.startsWith("ytm:track:") } }
+            fun valid(t: JSONObject?) = t?.takeIf { it.optString("id").let { id -> id.startsWith("spotify:track:") || id.startsWith("ytm:track:") } }
+            fun track() = valid(json.optJSONObject("track"))
+            fun next() = json.optJSONArray("next")?.let { a -> (0 until minOf(a.length(), 50)).mapNotNull { valid(a.optJSONObject(it)) } }.orEmpty()
             return when (json.optString("do")) {
                 "play" -> Play
                 "pause" -> Pause
                 "seek" -> if (json.has("pos")) Seek(json.optLong("pos").coerceAtLeast(0)) else null
                 "next" -> Next
                 "previous" -> Previous
-                "play-track" -> track()?.let(::PlayTrack)
+                "play-track" -> track()?.let { PlayTrack(it, next()) }
                 "add" -> track()?.let(::Add)
                 else -> null
             }
@@ -54,7 +57,10 @@ sealed interface JamCommand {
 }
 
 /** Takes a guest's music action in place of the local player while the user is a guest in a Jam. */
-fun interface GuestControl { fun send(command: JamCommand) }
+fun interface GuestControl {
+    /** True when the host takes it; false when the host has gone quiet and the phone should act on its own. */
+    fun send(command: JamCommand): Boolean
+}
 
 /**
  * The host's side: applies each member's command to the player once (commands carry an id; relays may deliver one
@@ -81,7 +87,7 @@ class JamCommandApplier(private val remember: Int = 200) {
             is JamCommand.Seek -> player.seek(command.positionMs)
             JamCommand.Next -> player.next()
             JamCommand.Previous -> player.previous()
-            is JamCommand.PlayTrack -> player.playQueue(listOf(command.track), 0, start = true)
+            is JamCommand.PlayTrack -> player.playQueue(listOf(command.track) + command.next, 0, start = true)
             is JamCommand.Add -> player.addToQueue(command.track)
         }
         lastAction = from to command.said

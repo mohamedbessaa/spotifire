@@ -28,6 +28,8 @@ internal class PlaybackBehavior(context: Context, private val player: ExoPlayer)
         }
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
             pausedByNoisyOutput = !playWhenReady && reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY
+            // Headphones unplugged on a Jam guest: pause the Jam, or it would resume this phone on its speaker.
+            if (pausedByNoisyOutput) fr.spotifeur.social.Jam.remote?.send(fr.spotifeur.social.JamCommand.Pause)
         }
     }
     private val devices = object : AudioDeviceCallback() {

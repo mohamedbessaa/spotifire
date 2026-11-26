@@ -1,6 +1,7 @@
 package fr.spotifeur.social
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -72,5 +73,13 @@ class JamSyncTest {
         assertTrue("another session", !guard.accepts("s2", from = "host"))
         guard.left()
         assertTrue(!guard.accepts("s1", from = "host"))
+    }
+
+    @Test
+    fun aSeekNeedsSeveralReadings() {
+        // Right after a reset one noisy reading must not trigger a seek (that chained seeks on a real guest).
+        assertFalse(JamDrift.decide(listOf(400L)) == DriftAction.Seek)
+        assertFalse(JamDrift.decide(listOf(400L, 410L)) == DriftAction.Seek)
+        assertEquals(DriftAction.Seek, JamDrift.decide(listOf(400L, 410L, 395L)))
     }
 }

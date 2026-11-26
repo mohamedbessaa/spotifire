@@ -106,20 +106,21 @@ class SpotifyPlayer(context: Context, scope: CoroutineScope) : AutoCloseable {
 
     private fun toHost(command: () -> fr.spotifeur.social.JamCommand?): Boolean {
         val control = guestControl.takeUnless { bypass } ?: return false
-        command()?.let(control::send)
-        return true
+        return command()?.let(control::send) ?: true
     }
 
-    fun play(queue: List<Music>, index: Int = 0) {
+    /** [shuffle]: whether to apply the user's shuffle; a Jam guest mirrors the host's order exactly. */
+    fun play(queue: List<Music>, index: Int = 0, shuffle: Boolean = ShuffleMemory.enabled) {
         val selected = queue.getOrNull(index) ?: return
         if (!selected.isPlayableTrack()) return
-        if (toHost { fr.spotifeur.social.JamCommand.PlayTrack(fr.spotifeur.social.SharedItems.track(selected)) }) return
+        if (toHost { fr.spotifeur.social.JamCommand.PlayTrack(fr.spotifeur.social.SharedItems.track(selected),
+                queue.drop(index + 1).filter(Music::isPlayableTrack).take(50).map(fr.spotifeur.social.SharedItems::track)) }) return
         val playable = queue.filter(Music::isPlayableTrack)
         val first = queue.take(index).count(Music::isPlayableTrack)
         // Shuffle reorders the queue itself: the chosen track plays first and every other one follows.
-        ShuffleMemory.original = playable.takeIf { ShuffleMemory.enabled }
-        val tracks = if (ShuffleMemory.enabled) listOf(playable[first]) + (playable.take(first) + playable.drop(first + 1)).shuffled() else playable
-        val start = if (ShuffleMemory.enabled) 0 else first
+        if (shuffle) ShuffleMemory.original = playable
+        val tracks = if (shuffle) listOf(playable[first]) + (playable.take(first) + playable.drop(first + 1)).shuffled() else playable
+        val start = if (shuffle) 0 else first
         mutableState.value = Playback(window(tracks, start).first, start - windowStart(start), buffering = true,
             durationMs = selected.durationMs, shuffle = ShuffleMemory.enabled, canNext = start < tracks.lastIndex)
         if (controller == null) { pending = tracks to start; return }
@@ -157,7 +158,7 @@ class SpotifyPlayer(context: Context, scope: CoroutineScope) : AutoCloseable {
     fun addToQueue(tracks: List<Music>) { controller?.let { player ->
         val valid = tracks.filter(Music::isPlayableTrack)
         if (valid.isEmpty()) return
-        guestControl.takeUnless { bypass }?.let { control -> valid.forEach { control.send(fr.spotifeur.social.JamCommand.Add(fr.spotifeur.social.SharedItems.track(it))) }; return }
+        guestControl.takeUnless { bypass }?.let { control -> if (valid.map { control.send(fr.spotifeur.social.JamCommand.Add(fr.spotifeur.social.SharedItems.track(it))) }.all { it }) return }
         if (player.mediaItemCount == 0) { play(valid, 0); return }
         val position = player.currentMediaItemIndex + 1 + userQueue(player).size
         player.addMediaItems(position, valid.map { mediaItem(it, queued = true) })
@@ -167,7 +168,7 @@ class SpotifyPlayer(context: Context, scope: CoroutineScope) : AutoCloseable {
     fun playNext(tracks: List<Music>) { controller?.let { player ->
         val valid = tracks.filter(Music::isPlayableTrack)
         if (valid.isEmpty()) return
-        guestControl.takeUnless { bypass }?.let { control -> valid.forEach { control.send(fr.spotifeur.social.JamCommand.Add(fr.spotifeur.social.SharedItems.track(it))) }; return }
+        guestControl.takeUnless { bypass }?.let { control -> if (valid.map { control.send(fr.spotifeur.social.JamCommand.Add(fr.spotifeur.social.SharedItems.track(it))) }.all { it }) return }
         if (player.mediaItemCount == 0) { play(valid, 0); return }
         player.addMediaItems(player.currentMediaItemIndex + 1, valid.map { mediaItem(it, queued = true) })
         queueChanged = true; update(player)
@@ -224,6 +225,8 @@ class SpotifyPlayer(context: Context, scope: CoroutineScope) : AutoCloseable {
 
     /** Off, shuffle, Smart Shuffle, off: Spotify's cycle. */
     fun shuffle() {
+        // A Jam guest plays the host's order; shuffling the mirror would send it to a random song at the next change.
+        if (guestControl != null && !bypass) return
         val canSmart = recommend != null
         when {
             ShuffleMemory.enabled && !ShuffleMemory.smart && canSmart -> { ShuffleMemory.smart = true; mixRecommendations(); return }

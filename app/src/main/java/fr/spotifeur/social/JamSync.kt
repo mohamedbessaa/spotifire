@@ -47,6 +47,8 @@ object JamDrift {
         val median = recent.sorted()[recent.size / 2]
         return when {
             kotlin.math.abs(median) < DEADBAND_MS -> DriftAction.None
+            // A seek needs a few readings agreeing: one noisy reading after a reset chained seeks on a real guest.
+            kotlin.math.abs(median) > SEEK_MS && recent.size < 3 -> DriftAction.None
             kotlin.math.abs(median) <= SEEK_MS -> DriftAction.Trim((1f - median / 20_000f).coerceIn(0.999f, 1.001f))
             else -> DriftAction.Seek
         }

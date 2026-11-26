@@ -186,7 +186,10 @@ class SpotifeurPlaybackService : MediaSessionService() {
                 // then moves every phone (this one included) once; the app's own controls are handled in SpotifyPlayer.
                 override fun onPlayerCommandRequest(session: MediaSession, controller: MediaSession.ControllerInfo, playerCommand: Int): Int {
                     val remote = fr.spotifeur.social.Jam.remote
-                    if (remote == null || controller.packageName == packageName) return super.onPlayerCommandRequest(session, controller, playerCommand)
+                    // The notification and Bluetooth/headset keys arrive through the media notification controller, which
+                    // lives in this app too: only the app's own player controls skip this (they are routed in SpotifyPlayer).
+                    if (remote == null || (controller.packageName == packageName && !session.isMediaNotificationController(controller)))
+                        return super.onPlayerCommandRequest(session, controller, playerCommand)
                     val command = when (playerCommand) {
                         androidx.media3.common.Player.COMMAND_PLAY_PAUSE ->
                             if (session.player.playWhenReady) fr.spotifeur.social.JamCommand.Pause else fr.spotifeur.social.JamCommand.Play
@@ -194,7 +197,8 @@ class SpotifeurPlaybackService : MediaSessionService() {
                         androidx.media3.common.Player.COMMAND_SEEK_TO_PREVIOUS, androidx.media3.common.Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM -> fr.spotifeur.social.JamCommand.Previous
                         else -> return super.onPlayerCommandRequest(session, controller, playerCommand)
                     }
-                    remote.send(command)
+                    // A host gone quiet: the button works on this phone alone.
+                    if (!remote.send(command)) return super.onPlayerCommandRequest(session, controller, playerCommand)
                     return androidx.media3.session.SessionResult.RESULT_ERROR_NOT_SUPPORTED
                 }
             }).build()
