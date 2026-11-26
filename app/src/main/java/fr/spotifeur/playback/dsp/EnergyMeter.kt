@@ -26,7 +26,7 @@ class EnergyMeter : BaseAudioProcessor() {
     private var windows = 0
 
     override fun onConfigure(inputAudioFormat: AudioFormat): AudioFormat =
-        if (inputAudioFormat.encoding == C.ENCODING_PCM_16BIT) inputAudioFormat else AudioFormat.NOT_SET
+        if (Pcm.supported(inputAudioFormat)) inputAudioFormat else AudioFormat.NOT_SET
 
     override fun onFlush() { squares = 0.0; count = 0; windows = 0; shortDb = -90f; longDb = -90f }
 
@@ -34,7 +34,10 @@ class EnergyMeter : BaseAudioProcessor() {
         val size = inputBuffer.remaining()
         if (size == 0) return
         val samples = inputBuffer.duplicate().order(ByteOrder.LITTLE_ENDIAN)
-        while (samples.remaining() >= 2) { val v = samples.short.toDouble(); squares += v * v; count++ }
+        if (inputAudioFormat.encoding == C.ENCODING_PCM_FLOAT) {
+            while (samples.remaining() >= 4) { val v = samples.float * 32768.0; squares += v * v; count++ }
+        } else while (samples.remaining() >= 2) { val v = samples.short.toDouble(); squares += v * v; count++ }
+        // 400 ms of samples.
         val window = inputAudioFormat.sampleRate.toLong() * inputAudioFormat.channelCount * 2 / 5
         if (count >= window) {
             val db = (20 * log10((sqrt(squares / count) / 32768).coerceAtLeast(1e-5))).toFloat()

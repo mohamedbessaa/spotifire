@@ -69,9 +69,11 @@ object TrackLoudness {
 }
 
 /**
- * Applies a linear gain to 16-bit PCM, then a peak limiter at -1 dBFS (instant attack, ~150 ms
- * release, no lookahead). [gain] is set from the main thread and read on the playback thread; a
- * change glides over ~50 ms so track changes do not click. Other encodings pass through untouched.
+ * Applies a linear gain, then a limiter. On float PCM (the normal path) the limiter works on the true peak with 2 ms of
+ * lookahead and holds everything under -0.3 dBTP, whatever the effects before it added; on 16-bit PCM it is the older
+ * sample-peak limiter at -1 dBFS (instant attack, ~150 ms release, no lookahead). [gain] is set from the main thread
+ * and read on the playback thread; a change glides over ~50 ms so track changes do not click. Other encodings pass
+ * through untouched.
  */
 @UnstableApi
 internal class LoudnessProcessor : BaseAudioProcessor() {
@@ -82,18 +84,32 @@ internal class LoudnessProcessor : BaseAudioProcessor() {
     private var glideCoef = 1f
     private var releaseCoef = 1f
 
+    private var limiter: fr.spotifeur.playback.dsp.TruePeakLimiter? = null
+    private var frames = FloatArray(0)
+
     override fun onConfigure(inputAudioFormat: AudioFormat): AudioFormat {
-        if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT) return AudioFormat.NOT_SET
+        if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT && inputAudioFormat.encoding != C.ENCODING_PCM_FLOAT) return AudioFormat.NOT_SET
         glideCoef = coefficient(GLIDE_SECONDS, inputAudioFormat.sampleRate)
         releaseCoef = coefficient(RELEASE_SECONDS, inputAudioFormat.sampleRate)
+        limiter = if (inputAudioFormat.encoding == C.ENCODING_PCM_FLOAT)
+            fr.spotifeur.playback.dsp.TruePeakLimiter(inputAudioFormat.sampleRate, inputAudioFormat.channelCount) else null
         return inputAudioFormat
     }
 
-    override fun onFlush() { reduction = 1f; snap = true }
+    override fun onFlush() { reduction = 1f; snap = true; limiter?.reset() }
+
+    override fun onReset() { limiter = null; frames = FloatArray(0) }
+
+    /** The float limiter holds its lookahead back; at the end of a stream it is let out. */
+    override fun onQueueEndOfStream() {
+        val tail = limiter?.drain() ?: return
+        replaceOutputBuffer(tail.size * 4).order(ByteOrder.LITTLE_ENDIAN).apply { tail.forEach { putFloat(it) } }.flip()
+    }
 
     override fun queueInput(inputBuffer: ByteBuffer) {
         val size = inputBuffer.remaining()
         if (size == 0) return
+        limiter?.let { queueFloat(inputBuffer, it); return }
         val target = gain
         if (snap) { current = target; snap = false }
         val output = replaceOutputBuffer(size).order(ByteOrder.LITTLE_ENDIAN)
@@ -121,6 +137,26 @@ internal class LoudnessProcessor : BaseAudioProcessor() {
         }
         output.put(input) // a trailing partial frame is not expected; pass it on unchanged
         current = g; reduction = gr
+        output.flip()
+    }
+
+    private fun queueFloat(inputBuffer: ByteBuffer, limiter: fr.spotifeur.playback.dsp.TruePeakLimiter) {
+        val input = inputBuffer.order(ByteOrder.LITTLE_ENDIAN)
+        val channels = inputAudioFormat.channelCount
+        val count = input.remaining() / 4 / channels
+        if (frames.size < count * channels) frames = FloatArray(count * channels)
+        val target = gain
+        if (snap) { current = target; snap = false }
+        var g = current
+        for (f in 0 until count) {
+            g += (target - g) * glideCoef
+            for (c in 0 until channels) frames[f * channels + c] = input.float * g
+        }
+        current = g
+        input.position(input.limit())
+        limiter.process(frames, count)
+        val output = replaceOutputBuffer(count * channels * 4).order(ByteOrder.LITTLE_ENDIAN)
+        for (i in 0 until count * channels) output.putFloat(frames[i])
         output.flip()
     }
 
