@@ -39,7 +39,8 @@ object MonochromeTracks {
         val isrc = query.isrc?.takeIf { it.length == 12 } ?: return null
         val artist = query.artists.split(",").firstOrNull()?.trim().orEmpty()
         val text = "${query.title} $artist".trim()
-        val candidates = runCatching { search(text) }.getOrDefault(emptyList())
+        // "Wait" (a rate limit) goes up as MonochromeBusy: it is not "no such song" and must not be remembered as one.
+        val candidates = try { search(text) } catch (busy: MonochromeBusy) { throw busy } catch (_: Exception) { emptyList() }
         return pick(isrc, query.durationMs, candidates)?.id
     }
 
@@ -49,11 +50,11 @@ object MonochromeTracks {
         .minByOrNull { if (durationMs > 0 && it.durationMs > 0) kotlin.math.abs(it.durationMs - durationMs) else 0 }
 
     internal fun search(text: String): List<Candidate> {
-        if (!gate.open()) return emptyList()
+        if (!gate.open()) throw MonochromeBusy()
         val url = "$BASE/search/tracks".toHttpUrl().newBuilder().addQueryParameter("q", text)
             .addQueryParameter("limit", "20").build()
         http.newCall(Request.Builder().url(url).header("Accept", "application/json").build()).execute().use { response ->
-            if (response.code == 429) { gate.refused(response.header("Retry-After")?.toLongOrNull()); return emptyList() }
+            if (response.code == 429) { gate.refused(response.header("Retry-After")?.toLongOrNull()); throw MonochromeBusy() }
             if (!response.isSuccessful) return emptyList()
             gate.served()
             return parse(response.body?.string().orEmpty())
@@ -74,9 +75,13 @@ object MonochromeTracks {
     fun streamUrl(id: String, lossless: Boolean = false): String = "$BASE/track/$id" + if (lossless) "?quality=LOSSLESS" else ""
 }
 
+/** Monochrome asked to wait (rate limit): not an answer about the song. */
+class MonochromeBusy : java.io.IOException("The copy service asked to wait.")
+
 /**
  * Keeps the app from asking Monochrome again too soon after a refusal ("429 Too Many Requests"): the time the service
- * gives in Retry-After, or else 2 s, doubling at each refusal in a row up to 60 s. A success starts over.
+ * gives in Retry-After, or else 15 s, doubling at each refusal in a row up to 60 s (its block lasts about a minute,
+ * and asking again sooner only prolongs it). A success starts over.
  */
 class MonochromeGate(private val now: () -> Long = System::currentTimeMillis) {
     private var until = 0L
@@ -85,7 +90,7 @@ class MonochromeGate(private val now: () -> Long = System::currentTimeMillis) {
     @Synchronized fun open(): Boolean = now() >= until
 
     @Synchronized fun refused(retryAfterSeconds: Long?) {
-        val waitMs = retryAfterSeconds?.takeIf { it > 0 }?.let { it * 1000 } ?: (2_000L shl step.coerceAtMost(5)).coerceAtMost(60_000)
+        val waitMs = retryAfterSeconds?.takeIf { it > 0 }?.let { it * 1000 } ?: (15_000L shl step.coerceAtMost(3)).coerceAtMost(60_000)
         step++
         until = now() + waitMs
     }

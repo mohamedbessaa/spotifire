@@ -40,6 +40,9 @@ class AskPace(private val gapMs: Long = 30_000L, private val now: () -> Long = S
     @Synchronized fun askedRecently(friend: String, answerMs: Long = 2 * 60_000L): Boolean =
         last[friend]?.let { now() - it <= answerMs } == true
 
+    /** The ask was answered (joined): a later invitation from [friend] needs a tap again. */
+    @Synchronized fun answered(friend: String) { last.remove(friend) }
+
     @Synchronized fun mayAsk(friend: String): Boolean {
         val at = now()
         if (last[friend]?.let { at - it < gapMs } == true) return false

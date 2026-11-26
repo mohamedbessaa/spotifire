@@ -50,14 +50,15 @@ class MonochromeTracksTest {
     fun gateClosesAfterARefusal() {
         assertTrue(gate.open())
         gate.refused(null)
-        clock += 1_000; assertFalse(gate.open())
+        // The service's block lasts about a minute: asking again after 2 s only prolongs it.
+        clock += 14_000; assertFalse(gate.open())
         clock += 1_100; assertTrue(gate.open())
     }
 
     @Test
     fun backOffDoubles() {
         gate.refused(null); gate.refused(null)
-        clock += 3_000; assertFalse(gate.open())
+        clock += 29_000; assertFalse(gate.open())
         clock += 1_100; assertTrue(gate.open())
     }
 
@@ -74,6 +75,23 @@ class MonochromeTracksTest {
         gate.served()
         assertTrue(gate.open())
         gate.refused(null)
-        clock += 2_100; assertTrue("back to the first step after a success", gate.open())
+        clock += 15_100; assertTrue("back to the first step after a success", gate.open())
+    }
+
+    @Test
+    fun aClosedGateIsBusyNotEmpty() {
+        // "Wait" and "no such song" are different answers: only the second may be remembered.
+        MonochromeTracks.gate.refused(null)
+        try {
+            org.junit.Assert.assertThrows(fr.spotifeur.data.sources.MonochromeBusy::class.java) { MonochromeTracks.search("anything") }
+        } finally { MonochromeTracks.gate.served() }
+    }
+
+    @Test
+    fun nothingCachedCountsAsNothing() {
+        // SimpleCache answers -length for a key it does not hold: two of those must not add up to "something kept".
+        assertEquals(0L, fr.spotifeur.playback.CopyBytes.kept(-Long.MAX_VALUE, -Long.MAX_VALUE))
+        assertEquals(500L, fr.spotifeur.playback.CopyBytes.kept(500, -Long.MAX_VALUE))
+        assertEquals(800L, fr.spotifeur.playback.CopyBytes.kept(500, 300))
     }
 }

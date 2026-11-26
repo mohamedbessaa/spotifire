@@ -81,12 +81,34 @@ internal object AudioRoute {
         else -> limited || lossless
     }
 
-    /** Whether playback asks for lossless now: the streaming setting for the network in use. */
+    @Volatile private var wantedAt = 0L
+    @Volatile private var wantedCache = false
+
+    /**
+     * Whether playback asks for lossless now: the streaming setting for the network in use. Read at most every 2 s
+     * (a queue builds many items at once, and the network check is a system call).
+     */
     fun losslessWanted(): Boolean {
+        val at = android.os.SystemClock.elapsedRealtime()
+        if (at - wantedAt < 2_000) return wantedCache
+        return computeLosslessWanted().also { wantedCache = it; wantedAt = at }
+    }
+
+    private fun computeLosslessWanted(): Boolean {
         val context = app ?: return false
         val settings = fr.spotifeur.data.preferences.SettingsStore.get(context).settings.value
         val metered = context.getSystemService(android.net.ConnectivityManager::class.java)?.isActiveNetworkMetered ?: true
         return AudioQuality.wantsLossless(if (metered) settings.streamingQualityMobile else settings.streamingQualityWifi, metered)
+    }
+
+    /** True when [trackId] is downloaded as FLAC, false when as AAC, null when not downloaded. */
+    fun storedLossless(trackId: String): Boolean? {
+        val context = app ?: return null
+        return when {
+            CopyBytes.downloaded(context, YouTubeUris.cacheKey(trackId, lossless = true)) > 0 -> true
+            CopyBytes.downloaded(context, YouTubeUris.cacheKey(trackId, lossless = false)) > 0 -> false
+            else -> null
+        }
     }
 
     /** Whether downloads are kept lossless (the download setting; they are made on any network). */

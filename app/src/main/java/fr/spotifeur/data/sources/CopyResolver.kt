@@ -22,17 +22,27 @@ object CopyResolver {
     fun init(context: Context) { if (app == null) app = context.applicationContext }
     private val preferences get() = app?.getSharedPreferences("track_copies", Context.MODE_PRIVATE)
 
-    /** Blocking. Null when no copy was found. */
-    fun resolve(query: MatchQuery): Copy? {
+    /**
+     * Blocking. Null when no copy was found. [monochromeOnly] (a Premium account wanting lossless): only an exact
+     * Monochrome copy counts, nothing else is remembered, and null sends the song to Spotify's engine.
+     */
+    fun resolve(query: MatchQuery, monochromeOnly: Boolean = false): Copy? {
         preferences?.getString(query.key, null)?.let(::decode)?.let { kept ->
-            if (kept is Copy.YouTube) lookForUpgrade(query)
+            if (kept is Copy.YouTube) { lookForUpgrade(query); if (monochromeOnly) return null }
             return kept
         }
         // A match kept by an earlier version may already have bytes in the cache under this track's key.
-        TrackMatcher.known(query.key)?.let { return Copy.YouTube(it) }
+        if (!monochromeOnly) TrackMatcher.known(query.key)?.let { return Copy.YouTube(it) }
         // A track loaded from an older cache has no ISRC: read it from Spotify's metadata, the key to an exact copy.
         val known = if (query.isrc == null && query.key.startsWith("spotify:track:")) query.copy(isrc = isrcOf(query.key)) else query
-        val copy = MonochromeTracks.find(known)?.let { Copy.Monochrome(it) }
+        val monochrome = try { MonochromeTracks.find(known) } catch (_: MonochromeBusy) {
+            // The service asked to wait: say nothing about this song now. A limited account plays its YouTube copy
+            // meanwhile (kept, for one file per name), and the upgrade check looks again later.
+            if (monochromeOnly) return null
+            return TrackMatcher.resolve(known)?.let { Copy.YouTube(it) }?.also { preferences?.edit { putString(query.key, it.videoId) } }
+        }
+        if (monochromeOnly && monochrome == null) return null
+        val copy = monochrome?.let { Copy.Monochrome(it) }
             ?: TrackMatcher.resolve(known)?.let { Copy.YouTube(it) }
             ?: return null
         android.util.Log.i("SpotifeurCopy", "${query.key} isrc=${known.isrc} copy=$copy")
@@ -55,7 +65,7 @@ object CopyResolver {
         java.util.concurrent.Executors.newSingleThreadExecutor().execute {
             try {
                 val known = if (query.isrc == null && query.key.startsWith("spotify:track:")) query.copy(isrc = isrcOf(query.key)) else query
-                val better = MonochromeTracks.find(known)
+                val better = try { MonochromeTracks.find(known) } catch (_: MonochromeBusy) { return@execute } // not checked: later
                 prefs.edit {
                     putBoolean(CHECKED + query.key, true)
                     if (better != null) putString(UPGRADE + query.key, better)

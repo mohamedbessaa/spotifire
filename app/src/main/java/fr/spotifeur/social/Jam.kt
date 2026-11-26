@@ -262,6 +262,7 @@ object Jam {
         stopAll(notify = true)
         withContext(Dispatchers.Main) { player?.saveQueue() }
         group = next; hosting = false; clock = JamClock(); state = null; lastFromHost = now(); hostClockNtp = false; joinedAt = now()
+        allowQueue = false // until the host's first update says otherwise
         // From now on this phone's play, pause, skip and seek go to the host, which applies them for everyone.
         // A host quiet for 15 s (its heartbeat is 5 s) may be gone: the phone then acts on its own, so pause still works.
         val toHost = GuestControl { command ->
@@ -416,7 +417,7 @@ object Jam {
                 invites[next.id] = invite to body
                 publishInvites()
                 // The answer to this phone's own "Ask to join": in at once, no second tap.
-                if (pace.askedRecently(message.from)) { join(context, next.id); return }
+                if (pace.askedRecently(message.from)) { pace.answered(message.from); join(context, next.id); return }
                 // Relays deliver an invitation again after a restart: announce each one once.
                 val seen = context.getSharedPreferences("social", Context.MODE_PRIVATE)
                 val announced = seen.getStringSet("jam_announced", emptySet()).orEmpty()
@@ -449,19 +450,22 @@ object Jam {
                 val applied = withContext(Dispatchers.Main) { player?.let { applier.apply(it, message.author, body) } == true }
                 if (applied) {
                     lastCommandAt = now()
-                    // Everyone hears the change at once, not at the next heartbeat: wait (up to 1 s) for it to land here,
-                    // since the player's controller applies commands a moment later.
-                    val before = withContext(Dispatchers.Main) { player?.now() }
-                    for (attempt in 1..10) {
-                        delay(100)
-                        val after = withContext(Dispatchers.Main) { player?.now() }
-                        val moved = after?.track?.optString("id") != before?.track?.optString("id") || after?.playing != before?.playing ||
-                            kotlin.math.abs((after?.positionMs ?: 0) - (before?.positionMs ?: 0) - attempt * 100L) > 1500
-                        if (moved) break
+                    // Off the message thread: pongs and other members' commands must not wait for this.
+                    Social.launch {
+                        // Everyone hears the change at once, not at the next heartbeat: wait (up to 1 s) for it to land here,
+                        // since the player's controller applies commands a moment later.
+                        val before = withContext(Dispatchers.Main) { player?.now() }
+                        for (attempt in 1..10) {
+                            delay(100)
+                            val after = withContext(Dispatchers.Main) { player?.now() }
+                            val moved = after?.track?.optString("id") != before?.track?.optString("id") || after?.playing != before?.playing ||
+                                kotlin.math.abs((after?.positionMs ?: 0) - (before?.positionMs ?: 0) - attempt * 100L) > 1500
+                            if (moved) break
+                        }
+                        withContext(Dispatchers.Main) { observe(player?.now()) }?.let { p ->
+                            announce(p.track, p.positionMs, p.playing, startAt = null, at = hostTimeAt(p.readAt))
+                            publishView(p.track, p.playing)
                     }
-                    withContext(Dispatchers.Main) { observe(player?.now()) }?.let { p ->
-                        announce(p.track, p.positionMs, p.playing, startAt = null, at = hostTimeAt(p.readAt))
-                        publishView(p.track, p.playing)
                     }
                 }
             }
