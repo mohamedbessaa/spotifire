@@ -20,6 +20,8 @@ interface JamPlayer {
         val track: JSONObject, val positionMs: Long, val playing: Boolean, val readAt: Long = android.os.SystemClock.elapsedRealtime(),
         /** Playback speed, and where the reading came from ("exo": the rendering player; "ctl": the controller's estimate). */
         val rate: Float = 1f, val source: String = "ctl", val rawMs: Long = positionMs,
+        /** Waiting for audio (loading after a seek or a new song) while meant to play. */
+        val buffering: Boolean = false,
     )
     fun now(): Now?
     fun upNext(): List<JSONObject>
@@ -71,6 +73,7 @@ object Jam {
     private val applier = JamCommandApplier()
     private var lastAction: Pair<String, String>? = null
     private var lastCommandAt = 0L
+    private var bufferingSince = 0L
     /** While the user is a guest: where the notification's and headphones' buttons go instead of the player. */
     @Volatile var remote: GuestControl? = null
         private set
@@ -131,7 +134,8 @@ object Jam {
         val p = withContext(Dispatchers.Main) { observe(player?.now()) } ?: return
         val wall = System.currentTimeMillis() - (now() - p.readAt)
         android.util.Log.i("SpotifeurJamSync", "$role wall=$wall pos=${p.rawMs} fpos=${p.positionMs} src=${p.source} playing=${p.playing} " +
-            "db=${"%.1f".format(fr.spotifeur.playback.dsp.EnergyMeter.lastRenderedDb)} track=${p.track.optString("id")}")
+            "db=${"%.1f".format(fr.spotifeur.playback.dsp.EnergyMeter.lastRenderedDb)} buf=${p.buffering} " +
+            "trim=${"%.5f".format(fr.spotifeur.playback.dsp.RateTrim.rate)} track=${p.track.optString("id")}")
     }
     private fun me() = Social.snapshot.value.me
 
@@ -293,6 +297,13 @@ object Jam {
                 p.playQueue(listOf(track) + stateQueue, expected + seekLead, start = shouldPlay); seekedAt = now(); offsets.clear()
                 return@withContext
             }
+            // Still loading after our own seek or a new song: wait for it instead of seeking again (that loop was the
+            // cuts a guest heard). Only a load stuck for long gets another try.
+            if (current.buffering && shouldPlay) {
+                if (bufferingSince == 0L) bufferingSince = now()
+                if (now() - bufferingSince < 4_000) return@withContext
+            }
+            bufferingSince = 0L
             if (!shouldPlay) { if (current.playing) p.pause(); if (kotlin.math.abs(current.positionMs - expected) > 250) p.seek(expected); p.trim(1f); return@withContext }
             if (!current.playing) { p.seek(expected + seekLead); p.resume(); seekedAt = now(); offsets.clear(); return@withContext }
             val off = current.positionMs - expected

@@ -101,8 +101,10 @@ object SocialBridge {
             val readAt = android.os.SystemClock.elapsedRealtime()
             val position = rendering?.currentPosition ?: model.player.exactPositionMs() ?: 0
             val playing = rendering?.isPlaying ?: model.player.isPlayingNow()
-            val rate = fr.spotifeur.playback.dsp.RateTrim.rate
-            return JamPlayer.Now(SharedItems.track(track), position, playing, readAt, rate, if (rendering != null) "exo" else "ctl")
+            // The playback speed, not the Jam's trim: the trim is a hair the position filter absorbs.
+            val rate = rendering?.playbackParameters?.speed ?: 1f
+            val buffering = rendering?.let { it.playWhenReady && it.playbackState == androidx.media3.common.Player.STATE_BUFFERING } == true
+            return JamPlayer.Now(SharedItems.track(track), position, playing, readAt, rate, if (rendering != null) "exo" else "ctl", buffering = buffering)
         }
         override fun upNext(): List<JSONObject> = model.player.state.value.let { s ->
             s.queue.drop(s.index + 1).take(20).filter { it.id.startsWith("spotify:track:") || it.id.startsWith("ytm:track:") }.map(SharedItems::track)

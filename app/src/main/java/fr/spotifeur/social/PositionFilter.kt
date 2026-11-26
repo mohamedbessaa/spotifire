@@ -15,9 +15,17 @@ class PositionFilter(private val window: Int = 12) {
     private var track: String? = null
     private var held = 0L
 
+    private var lastRead = 0L
+    private var lastPosition = Long.MIN_VALUE
+
     fun add(readAt: Long, position: Long, rate: Float, playing: Boolean, track: String) {
+        // Stuck while playing (audio starting after a seek, a stalled output): the same number again says nothing new.
+        val frozen = playing && this.playing && track == this.track && abs(position - lastPosition) <= 50 && readAt - lastRead >= 300
+        if (frozen) return
+        lastRead = readAt; lastPosition = position
         val jumped = anchors.isNotEmpty() && abs(position - estimateRaw(readAt)) > 1000
-        if (track != this.track || playing != this.playing || rate != this.rate || jumped) anchors.clear()
+        // A real speed change starts over; a listen-together trim (at most 0.1%) moves the line by a few ms only.
+        if (track != this.track || playing != this.playing || abs(rate - this.rate) > 0.005f || jumped) anchors.clear()
         this.track = track; this.playing = playing; this.rate = rate
         if (!playing) { held = position; return }
         anchors.addLast(position - rate.toDouble() * readAt)
@@ -35,5 +43,5 @@ class PositionFilter(private val window: Int = 12) {
         return kept.average() + rate * at
     }
 
-    fun reset() { anchors.clear(); track = null }
+    fun reset() { anchors.clear(); track = null; lastPosition = Long.MIN_VALUE }
 }
