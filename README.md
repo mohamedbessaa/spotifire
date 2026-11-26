@@ -75,12 +75,14 @@ Spotifeur is an amazing project—its backend architecture, multi-source streami
 A small badge on each song and playlist shows where it comes from: green for Spotify, red for
 YouTube Music, blue for files on the phone.
 
-### Spotify Free, without the limits
+### Lossless, on every account
 
-On a Free account Spotify's engine is limited to 128 kbit/s and refuses offline listening. Spotifire
-plays and downloads those songs from their best copy instead: the same recording found by its ISRC
-on Monochrome (AAC 320 kbit/s or FLAC), then on YouTube Music. A copy that cannot be opened falls
-back to Spotify's engine at the same position. Premium accounts keep Spotify's engine.
+Spotifire plays a Spotify song from its **lossless FLAC copy** (CD quality, the same tier as Spotify's
+lossless) when one exists: the same recording found by its ISRC on Monochrome. This is on by default on
+Wi-Fi (Quality: Automatic or Lossless) and for downloads, on every account, Premium included. Without a
+lossless copy, Premium plays Spotify's own stream; a Free account, held to 128 kbit/s and refused offline
+listening by Spotify, plays and downloads the AAC 320 kbit/s copy, then YouTube Music. A copy that
+cannot be opened falls back to Spotify's engine at the same position.
 
 ### Spotify-style interface
 
@@ -129,6 +131,7 @@ no Spotifire server and no account to create. See [Privacy](#privacy).
 
 ## Sound
 
+- **Lossless**: FLAC copies, CD quality, when a song has one (see above).
 - **High-precision output**: every source is processed in 32-bit float and ends in a true-peak
   limiter (−0.3 dBTP), so equalizer boosts never clip, whatever the headphones or speaker.
 - **Loudness**: Off, Quiet, Normal or Loud (−23/−14/−11 LUFS) with a limiter, so songs play at the

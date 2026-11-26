@@ -1,5 +1,28 @@
 # Changelog
 
+## v1.1.4
+
+### Added
+
+- **Lossless**: a Spotify song plays from its FLAC copy (CD quality) when one exists, on every account,
+  Premium included. On by default on Wi-Fi (Automatic) and for downloads; choose it on mobile data in
+  Settings → Playback → Quality.
+
+### Changed
+
+- The Canvas clips are off: the player shows the track card.
+- Listen together corrects gaps under a second with inaudible trims and seeks only for a real glitch.
+- Accepting a request while hosting adds the friend to the running Jam; the friend who asked joins
+  without a second tap.
+
+### Fixed
+
+- A Jam guest's notification seek bar, queue taps and "previous" now steer the Jam.
+- Old join requests no longer come back after a restart; expired ones leave the screen.
+- During a call a Jam guest waits instead of seeking.
+- The host's own skips are credited; a guest is told when adding songs is off.
+- The Monochrome service's rate limit is waited out instead of retried at once.
+
 ## v1.1.3
 
 ### Added
