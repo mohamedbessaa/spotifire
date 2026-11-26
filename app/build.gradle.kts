@@ -44,6 +44,10 @@ android {
             storePassword = releaseKeys.getProperty("storePassword")
             keyAlias = releaseKeys.getProperty("keyAlias")
             keyPassword = releaseKeys.getProperty("keyPassword")
+            // Every scheme, not just v2: Xiaomi's HyperOS installer rejects a v2-only APK as "invalid".
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
         }
         buildTypes.getByName("release").signingConfig = signingConfigs.getByName("release")
     }
@@ -199,6 +203,38 @@ tasks.register("prepareSpotifyRuntime") {
                 val library = "liborbit-jni-spotify.so"
                 copyChecked(apk.getInputStream(apk.getEntry("lib/arm64-v8a/$library") ?: error("Missing Orbit library")),
                     libs.resolve(library), "2353f26f5e174917b36c3c9de4538717c6348cc0bacf8b2c094f22d1447538e2")
+            }
+        }
+    }
+}
+
+// Xiaomi's HyperOS installer rejects an APK without the v1 (JAR) signature as "invalid", and AGP leaves v1 out when
+// minSdk is 24 or more whatever enableV1Signing says. So the release APK is signed again, with every scheme, by the
+// SDK's own apksigner. The passwords go to it through its environment, never on a command line.
+val resignKeys = rootProject.file("keystore.properties").takeIf { it.exists() }?.let { file ->
+    Properties().apply { file.inputStream().use { load(it) } }
+}
+if (resignKeys != null) {
+    val sdkDirectory = androidComponents.sdkComponents.sdkDirectory
+    val releaseApks = layout.buildDirectory.dir("outputs/apk/release")
+    val storeFile = rootProject.file(resignKeys.getProperty("storeFile").removePrefix("../")).path
+    val keyAlias = resignKeys.getProperty("keyAlias")
+    val storePassword = resignKeys.getProperty("storePassword")
+    val keyPassword = resignKeys.getProperty("keyPassword")
+    tasks.matching { it.name == "assembleRelease" }.configureEach {
+        doLast {
+            val buildTools = sdkDirectory.get().asFile.resolve("build-tools").listFiles()?.filter { it.resolve("apksigner").exists() }
+                ?.maxByOrNull { it.name } ?: error("No build-tools with apksigner")
+            releaseApks.get().asFile.listFiles { f -> f.extension == "apk" }?.forEach { apk ->
+                val process = ProcessBuilder(buildTools.resolve("apksigner").path, "sign", "--ks", storeFile, "--ks-key-alias", keyAlias,
+                    "--ks-pass", "env:SPOTIFIRE_STORE_PASS", "--key-pass", "env:SPOTIFIRE_KEY_PASS", "--min-sdk-version", "26",
+                    "--v1-signing-enabled", "true", "--v2-signing-enabled", "true", "--v3-signing-enabled", "true", apk.path)
+                    .redirectErrorStream(true)
+                process.environment()["SPOTIFIRE_STORE_PASS"] = storePassword
+                process.environment()["SPOTIFIRE_KEY_PASS"] = keyPassword
+                val started = process.start()
+                val output = started.inputStream.bufferedReader().readText()
+                check(started.waitFor() == 0) { "apksigner failed: ${output.take(500)}" }
             }
         }
     }
