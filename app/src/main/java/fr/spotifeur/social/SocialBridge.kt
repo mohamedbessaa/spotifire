@@ -107,16 +107,19 @@ object SocialBridge {
         override fun upNext(): List<JSONObject> = model.player.state.value.let { s ->
             s.queue.drop(s.index + 1).take(20).filter { it.id.startsWith("spotify:track:") || it.id.startsWith("ytm:track:") }.map(SharedItems::track)
         }
-        override fun play(track: JSONObject, positionMs: Long, start: Boolean) {
-            val song = SharedItems.fromTrack(track) ?: return
-            model.play(listOf(song), 0)
+        override fun playQueue(tracks: List<JSONObject>, positionMs: Long, start: Boolean) {
+            val songs = tracks.mapNotNull(SharedItems::fromTrack).takeIf { it.isNotEmpty() } ?: return
+            val loaded = model.player.state.value
+            // The host's song is already next here: move on to it and keep what the player preloaded.
+            if (loaded.index + 1 < loaded.queue.size && loaded.queue[loaded.index + 1].id == songs.first().id) model.player.seekToItem(loaded.index + 1)
+            else model.play(songs, 0)
             model.player.seek(positionMs.toInt())
             if (!start) model.player.pause()
         }
         override fun pause() = model.player.pause()
         override fun resume() = model.player.resume()
         override fun seek(positionMs: Long) = model.player.seek(positionMs.toInt())
-        override fun speed(rate: Float) = model.player.setSpeed(rate)
+        override fun trim(rate: Float) { fr.spotifeur.playback.dsp.RateTrim.rate = rate }
         override fun addToQueue(track: JSONObject) { SharedItems.fromTrack(track)?.let { model.player.addToQueue(listOf(it)) } }
         override fun saveQueue() {
             val (queue, index) = model.player.context()

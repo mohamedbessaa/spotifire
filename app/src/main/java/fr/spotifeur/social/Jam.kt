@@ -23,11 +23,13 @@ interface JamPlayer {
     )
     fun now(): Now?
     fun upNext(): List<JSONObject>
-    fun play(track: JSONObject, positionMs: Long, start: Boolean)
+    /** Plays [tracks] as the queue (the host's song, then its next ones, so the next song is preloaded) at [positionMs]. */
+    fun playQueue(tracks: List<JSONObject>, positionMs: Long, start: Boolean)
     fun pause()
     fun resume()
     fun seek(positionMs: Long)
-    fun speed(rate: Float)
+    /** Plays the music at [rate] (within ±0.1%, inaudible) to close a small gap; 1 is as recorded. */
+    fun trim(rate: Float)
     fun addToQueue(track: JSONObject)
     /** Keeps the guest's own queue aside when joining, and puts it back on leaving. */
     fun saveQueue()
@@ -55,6 +57,10 @@ object Jam {
     private var clock = JamClock()
     private var state: JamState? = null
     private var stateTrack: JSONObject? = null
+    /** The host's next songs, mirrored into the guest's queue. */
+    private var stateQueue: List<JSONObject> = emptyList()
+    /** The guest's last readings of how far it is off the host (actual minus expected, ms). */
+    private val offsets = ArrayDeque<Long>()
     private var allowQueue = false
     private var joined = emptySet<String>()
     private var lastFromHost = 0L
@@ -142,12 +148,14 @@ object Jam {
                 val toggled = last?.playing != nowPlaying.playing
                 val elapsed = now() - lastAt
                 val jumped = last != null && !trackChanged && kotlin.math.abs(nowPlaying.positionMs - (last.positionMs + if (last.playing) elapsed else 0)) > 1500
-                if (trackChanged && last != null && nowPlaying.playing) {
-                    // A new track starts on both phones together: hold it 1.5 s while the guests load theirs.
+                // A song that ended on its own continues gaplessly: the guests have the next one preloaded and switch at
+                // the same moment. A skip is held briefly on both phones so the guests can load the new song.
+                val ended = last?.let { l -> l.track.optLong("durationMs").let { d -> d > 0 && l.positionMs >= d - 1_000 } } == true
+                if (trackChanged && last != null && nowPlaying.playing && !ended) {
                     withContext(Dispatchers.Main) { player?.pause(); player?.seek(0) }
-                    val startAt = hostTime() + START_LEAD_MS
+                    val startAt = hostTime() + SKIP_HOLD_MS
                     announce(nowPlaying.track, 0, playing = true, startAt = startAt)
-                    delay(START_LEAD_MS)
+                    delay(SKIP_HOLD_MS)
                     withContext(Dispatchers.Main) { player?.resume() }
                     lastSent = now()
                     last = nowPlaying.copy(positionMs = 0); lastAt = now()
@@ -233,18 +241,23 @@ object Jam {
             val expected = target.positionAt(hostEstimateAt(current?.readAt ?: now()) ?: hostNow).coerceIn(0, end)
             val shouldPlay = target.startAtHostTime?.let { hostNow >= it } ?: target.playing
             if (current?.track?.optString("id") != target.trackId) {
-                p.play(track, expected + seekLead, start = shouldPlay); seekedAt = now()
+                // The song the host just moved on from, ending here too: the preloaded next one takes over by itself.
+                val endingHere = current != null && current.playing && current.track.optLong("durationMs").let { d -> d > 0 && current.positionMs >= d - 1_500 }
+                if (endingHere && stateQueue.isNotEmpty()) return@withContext
+                p.playQueue(listOf(track) + stateQueue, expected + seekLead, start = shouldPlay); seekedAt = now(); offsets.clear()
                 return@withContext
             }
-            if (!shouldPlay) { if (current.playing) p.pause(); if (kotlin.math.abs(current.positionMs - expected) > 250) p.seek(expected); p.speed(1f); return@withContext }
-            if (!current.playing) { p.seek(expected + seekLead); p.resume(); seekedAt = now(); return@withContext }
+            if (!shouldPlay) { if (current.playing) p.pause(); if (kotlin.math.abs(current.positionMs - expected) > 250) p.seek(expected); p.trim(1f); return@withContext }
+            if (!current.playing) { p.seek(expected + seekLead); p.resume(); seekedAt = now(); offsets.clear(); return@withContext }
             val off = current.positionMs - expected
             // Learn how long a seek takes to sound: the first reading 1-3 s after it says how far behind it landed.
             seekedAt?.let { at -> if (now() - at in 1000..3000) { seekLead = (seekLead - off / 2).coerceIn(0, 1500); seekedAt = null } }
-            when (val action = JamDrift.decide(expected, current.positionMs)) {
-                DriftAction.None -> p.speed(1f)
-                is DriftAction.Speed -> p.speed(action.rate)
-                is DriftAction.Seek -> { p.seek(action.positionMs + seekLead); p.speed(1f); seekedAt = now() }
+            // Readings right after a seek describe the seek, not the drift.
+            if (seekedAt == null || now() - seekedAt!! > 1000) { offsets.addLast(off); while (offsets.size > 5) offsets.removeFirst() }
+            when (val action = JamDrift.decide(offsets.toList())) {
+                DriftAction.None -> p.trim(1f)
+                is DriftAction.Trim -> p.trim(action.rate)
+                DriftAction.Seek -> { p.seek(expected + seekLead); p.trim(1f); seekedAt = now(); offsets.clear() }
             }
         }
         // A scheduled start is met at the exact moment, not at the next tick.
@@ -270,7 +283,7 @@ object Jam {
         if (hosting) Social.messengerOrNull()?.publishGroup(session, JSONObject().put("type", "end"), live = true)
         else {
             Social.messengerOrNull()?.publishGroup(session, JSONObject().put("type", "bye"), live = true)
-            withContext(Dispatchers.Main) { player?.speed(1f); player?.restoreQueue() }
+            withContext(Dispatchers.Main) { player?.trim(1f); player?.restoreQueue() }
         }
         stopAll(notify = false)
     }
@@ -279,7 +292,7 @@ object Jam {
         if (notify && group != null) {
             val session = group!!
             Social.messengerOrNull()?.publishGroup(session, JSONObject().put("type", if (hosting) "end" else "bye"), live = true)
-            if (!hosting) withContext(Dispatchers.Main) { player?.speed(1f); player?.restoreQueue() }
+            if (!hosting) withContext(Dispatchers.Main) { player?.trim(1f); player?.restoreQueue() }
         }
         loop?.cancel(); loop = null
         group = null; hosting = false; state = null; stateTrack = null; joined = emptySet()
@@ -343,7 +356,9 @@ object Jam {
                     state = JamState(session.id, id, body.optLong("pos"), body.optLong("at"), body.optBoolean("playing"),
                         body.optLong("startAt").takeIf { body.has("startAt") })
                     hostClockNtp = body.optString("clock") == "ntp"
+                    if (stateTrack?.optString("id") != id) offsets.clear()
                     stateTrack = track
+                    stateQueue = body.optJSONArray("queue")?.let { a -> (0 until a.length()).mapNotNull(a::optJSONObject) }.orEmpty()
                     allowQueue = body.optBoolean("allowQueue")
                     joined = body.optJSONArray("joined")?.let { a -> (0 until a.length()).map(a::getString) }.orEmpty().toSet()
                     publishView(track, state!!.playing)
@@ -363,7 +378,7 @@ object Jam {
 
     private fun publishInvites() { mutableInvites.value = invites.values.map { it.first } }
 
-    private const val START_LEAD_MS = 1500L
+    private const val SKIP_HOLD_MS = 500L
     private const val HEARTBEAT_MS = 5000L
     private const val HOST_GONE_MS = 10 * 60 * 1000L
     private const val NTP_EVERY_MS = 60_000L

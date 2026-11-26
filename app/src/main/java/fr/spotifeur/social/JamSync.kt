@@ -25,21 +25,30 @@ class JamClock(private val window: Int = 8) {
 
 sealed interface DriftAction {
     data object None : DriftAction
-    data class Speed(val rate: Float) : DriftAction
-    data class Seek(val positionMs: Long) : DriftAction
+    /** Play at [rate] (within ±0.1%, inaudible) until the gap closes. */
+    data class Trim(val rate: Float) : DriftAction
+    /** A real gap (a rebuffer, a late join): jump once to where the host is. */
+    data object Seek : DriftAction
 }
 
 /**
- * What a guest does about being off the host: under 20 ms nothing; up to 250 ms a speed change in proportion, closing
- * the gap in about 2.5 s and never beyond ±3% (inaudible); beyond, a seek.
+ * What a guest does about being off the host, from its last readings (actual minus expected, ms). The median of the
+ * last five, so one bad reading never moves anything: under 15 ms nothing; up to 150 ms an inaudible rate trim in
+ * proportion (at most 0.1%, about 1 ms closed per second, many times the drift between two phones' clocks); beyond,
+ * a seek, which only a glitch causes.
  */
 object JamDrift {
-    fun decide(expectedMs: Long, actualMs: Long): DriftAction {
-        val off = actualMs - expectedMs
+    const val DEADBAND_MS = 15L
+    const val SEEK_MS = 150L
+
+    fun decide(offsets: List<Long>): DriftAction {
+        val recent = offsets.takeLast(5)
+        if (recent.isEmpty()) return DriftAction.None
+        val median = recent.sorted()[recent.size / 2]
         return when {
-            kotlin.math.abs(off) < 20 -> DriftAction.None
-            kotlin.math.abs(off) <= 250 -> DriftAction.Speed((1f - off / 2500f).coerceIn(0.97f, 1.03f))
-            else -> DriftAction.Seek(expectedMs)
+            kotlin.math.abs(median) < DEADBAND_MS -> DriftAction.None
+            kotlin.math.abs(median) <= SEEK_MS -> DriftAction.Trim((1f - median / 20_000f).coerceIn(0.999f, 1.001f))
+            else -> DriftAction.Seek
         }
     }
 }

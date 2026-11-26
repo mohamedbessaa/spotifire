@@ -26,14 +26,29 @@ class JamSyncTest {
     }
 
     @Test
-    fun driftIsLeftAloneNudgedInProportionOrJumped() {
-        assertEquals(DriftAction.None, JamDrift.decide(expectedMs = 60_000, actualMs = 60_015))
-        // 30 ms ahead: slow down a little, closing the gap in about 2.5 s.
-        assertEquals(0.988f, (JamDrift.decide(expectedMs = 60_000, actualMs = 60_030) as DriftAction.Speed).rate, 0.0005f)
-        assertEquals(DriftAction.Speed(1.03f), JamDrift.decide(expectedMs = 60_000, actualMs = 59_900)) // behind: faster
-        assertEquals(DriftAction.Speed(0.97f), JamDrift.decide(expectedMs = 60_000, actualMs = 60_200)) // ahead: slower
-        assertEquals(DriftAction.Seek(60_000), JamDrift.decide(expectedMs = 60_000, actualMs = 60_400))
-        assertEquals(DriftAction.Seek(60_000), JamDrift.decide(expectedMs = 60_000, actualMs = 59_000))
+    fun deadbandIsQuiet() {
+        assertEquals(DriftAction.None, JamDrift.decide(listOf(10L, -12L, 8L, 14L, -9L)))
+    }
+
+    @Test
+    fun trimStaysInaudible() {
+        // Ahead: a touch slower; behind: a touch faster; never beyond 0.1%.
+        val ahead = JamDrift.decide(List(5) { 140L }) as DriftAction.Trim
+        assertTrue("ahead slows down: ${ahead.rate}", ahead.rate >= 0.999f && ahead.rate < 1f)
+        val behind = JamDrift.decide(List(5) { -140L }) as DriftAction.Trim
+        assertTrue("behind speeds up: ${behind.rate}", behind.rate > 1f && behind.rate <= 1.001f)
+    }
+
+    @Test
+    fun oneOutlierDoesNotSeek() {
+        // A single bad reading (a late position, a hiccup) must not make anyone jump.
+        val action = JamDrift.decide(listOf(20L, 25L, 900L, 22L, 18L))
+        assertTrue("got $action", action is DriftAction.Trim || action == DriftAction.None)
+    }
+
+    @Test
+    fun realGapSeeks() {
+        assertEquals(DriftAction.Seek, JamDrift.decide(listOf(400L, 410L, 395L, 405L, 402L)))
     }
 
     @Test
