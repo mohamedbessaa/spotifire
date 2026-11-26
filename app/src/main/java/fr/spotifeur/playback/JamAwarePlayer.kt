@@ -9,6 +9,7 @@ import androidx.media3.session.MediaSession
  * (the media notification controller, which also carries the headset keys) goes to the host like any other action,
  * instead of moving this phone alone until the Jam snaps it back.
  */
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class JamAwarePlayer(player: Player, private val session: () -> MediaSession?) : ForwardingPlayer(player) {
     private fun fromNotification(): Boolean {
         val s = session() ?: return false
