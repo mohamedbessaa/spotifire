@@ -10,12 +10,15 @@ data class JoinRequest(val from: String, val at: Long)
 class JoinRequests(private val ttlMs: Long = 2 * 60_000L, private val now: () -> Long = System::currentTimeMillis) {
     private val items = LinkedHashMap<String, JoinRequest>()
 
-    /** True when [from]'s request is new and should be shown. */
-    @Synchronized fun receive(from: String, isFriend: Boolean): Boolean {
-        if (!isFriend) return false
+    /**
+     * True when [from]'s request is new and should be shown. [sentAtMs] is when it was sent: relays deliver old
+     * messages again after a restart, and a request older than [ttlMs] is not new.
+     */
+    @Synchronized fun receive(from: String, isFriend: Boolean, sentAtMs: Long = now()): Boolean {
+        if (!isFriend || now() - sentAtMs > ttlMs) return false
         prune()
         if (items.containsKey(from)) return false
-        items[from] = JoinRequest(from, now())
+        items[from] = JoinRequest(from, minOf(sentAtMs, now()))
         return true
     }
 

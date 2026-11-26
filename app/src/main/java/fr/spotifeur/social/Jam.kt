@@ -426,7 +426,7 @@ object Jam {
                 }
             }
             "jam-decline" -> Unit
-            "jam-request" -> if (requests.receive(message.from, isFriend)) {
+            "jam-request" -> if (requests.receive(message.from, isFriend, message.sentAt * 1000)) {
                 mutableRequests.value = requests.list()
                 SocialNotifier.joinRequest(context, Social.nameOf(message.from))
             }

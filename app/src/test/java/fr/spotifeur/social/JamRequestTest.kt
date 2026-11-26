@@ -63,4 +63,12 @@ class JamRequestTest {
         clock += 61_000
         assertFalse(pace.askedRecently("ana"))
     }
+
+    @Test
+    fun anOldRequestDeliveredAgainIsIgnored() {
+        // Relays deliver old messages again after a restart: a request sent hours ago must not pop up as new.
+        assertFalse(requests.receive("ana", isFriend = true, sentAtMs = clock - 3 * 60 * 60_000L))
+        assertTrue(requests.list().isEmpty())
+        assertTrue("a fresh one still counts", requests.receive("ana", isFriend = true, sentAtMs = clock - 5_000))
+    }
 }
