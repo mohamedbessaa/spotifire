@@ -10,6 +10,12 @@
 ### Fixed
 
 - A Jam invitation is announced once, not again each time the app restarts.
+- The Friends connection notification no longer comes back after being dismissed (it was posted again at
+  every app launch and every 15-minute check).
+- Canvas follows the song: after Next or Back the previous song's clip no longer stays frozen on screen.
+- Friend codes are links (`spotifire://friend/…`) that phone cameras and QR apps can open in Spotifire, drawn
+  with their quiet zone; Add friends can also read a code from a photo or screenshot.
+- The GitHub build runs again (the Gradle wrapper was not executable).
 
 ## v1.1.1
 

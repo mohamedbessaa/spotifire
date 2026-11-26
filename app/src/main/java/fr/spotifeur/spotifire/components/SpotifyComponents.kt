@@ -382,10 +382,14 @@ fun CanvasVideo(url: String, modifier: Modifier = Modifier) {
     }
     androidx.compose.runtime.DisposableEffect(player) { onDispose { player.release() } }
     Box(modifier.clipToBounds(), contentAlignment = Alignment.Center) {
-        androidx.compose.ui.viewinterop.AndroidView(
-            factory = { android.view.TextureView(it).also(player::setVideoTextureView) },
-            modifier = Modifier.fillMaxHeight().aspectRatioMatchHeight(9f / 16f),
-        )
+        // One surface per player: an AndroidView's factory runs once, so without the key a new song's player was
+        // never attached and the surface kept the previous clip's last frame.
+        androidx.compose.runtime.key(player) {
+            androidx.compose.ui.viewinterop.AndroidView(
+                factory = { android.view.TextureView(it).also(player::setVideoTextureView) },
+                modifier = Modifier.fillMaxHeight().aspectRatioMatchHeight(9f / 16f),
+            )
+        }
     }
 }
 

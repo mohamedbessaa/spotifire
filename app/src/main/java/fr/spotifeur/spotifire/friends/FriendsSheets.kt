@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.QrCodeScanner
+import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
@@ -102,16 +103,27 @@ private fun SheetTitle(text: String) = Text(text, color = Color.White, fontSize 
 
 /** Find people by exact name or handle, or scan their code. */
 @Composable
-internal fun AddFriendSheet(snap: SocialSnapshot, onDismiss: () -> Unit) {
+internal fun AddFriendSheet(snap: SocialSnapshot, initial: DirectoryEntry? = null, onDismiss: () -> Unit) {
     var query by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<List<DirectoryEntry>?>(null) }
     var searching by remember { mutableStateOf(false) }
-    var scanned by remember { mutableStateOf<DirectoryEntry?>(null) }
+    var scanned by remember { mutableStateOf(initial) }
     var scanError by remember { mutableStateOf<String?>(null) }
     val scanner = rememberLauncherForActivityResult(ScanContract()) { result ->
         val text = result.contents ?: return@rememberLauncherForActivityResult
         val parsed = Social.parseQr(text)
         if (parsed == null) scanError = "That's not a Spotifire friend code." else { scanned = DirectoryEntry(parsed.first, parsed.second, null); scanError = null }
+    }
+    val context = LocalContext.current
+    // A code saved as a picture or sent in a chat: read it from the photo.
+    val fromPhoto = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        Social.launch {
+            val text = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { readCode(context, uri) }
+            val parsed = text?.let(Social::parseQr)
+            if (parsed == null) scanError = if (text == null) "No QR code found in that picture." else "That's not a Spotifire friend code."
+            else { scanned = DirectoryEntry(parsed.first, parsed.second, null); scanError = null }
+        }
     }
     LaunchedEffect(query) {
         if (Directory.key(query.substringBefore('#')).length < 2) { results = null; return@LaunchedEffect }
@@ -132,6 +144,13 @@ internal fun AddFriendSheet(snap: SocialSnapshot, onDismiss: () -> Unit) {
             Icon(Icons.Outlined.QrCodeScanner, null, tint = Color.White)
             Spacer(Modifier.width(14.dp))
             Text("Scan a friend's code", color = Color.White, fontSize = 15.sp)
+        }
+        Row(Modifier.fillMaxWidth().quietClick {
+            fromPhoto.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+        }.padding(horizontal = 20.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(androidx.compose.material.icons.Icons.Outlined.Image, null, tint = Color.White)
+            Spacer(Modifier.width(14.dp))
+            Text("Scan from a photo", color = Color.White, fontSize = 15.sp)
         }
         scanError?.let { Text(it, color = SpotifyColors.Error, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 20.dp)) }
         scanned?.let { entry -> PersonResult(entry, snap) { Social.launch { Social.sendRequest(entry.pubKey, entry.name) } } }
@@ -192,7 +211,7 @@ internal fun MyCodeSheet(snap: SocialSnapshot, onDismiss: () -> Unit) {
 }
 
 private fun qrBitmap(text: String): Bitmap {
-    val matrix = QRCodeWriter().encode(text, BarcodeFormat.QR_CODE, 0, 0, mapOf(EncodeHintType.MARGIN to 0))
+    val matrix = fr.spotifeur.social.QrCodes.matrix(text)
     val size = matrix.width
     val pixels = IntArray(size * size) { if (matrix[it % size, it / size]) android.graphics.Color.BLACK else android.graphics.Color.WHITE }
     return Bitmap.createBitmap(pixels, size, size, Bitmap.Config.ARGB_8888)
@@ -505,3 +524,17 @@ internal fun SwitchRow(title: String, subtitle: String, checked: Boolean, onChan
             uncheckedThumbColor = SpotifyColors.TextSecondary, uncheckedTrackColor = SpotifyColors.Highlight, uncheckedBorderColor = Color.Transparent))
     }
 }
+
+/** The friend code in a picture from the gallery, read at a size that keeps the modules sharp. */
+private fun readCode(context: android.content.Context, uri: android.net.Uri): String? = runCatching {
+    val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    context.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, bounds) }
+    var sample = 1
+    while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= 1600) sample *= 2
+    val bitmap = context.contentResolver.openInputStream(uri)?.use {
+        android.graphics.BitmapFactory.decodeStream(it, null, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample })
+    } ?: return@runCatching null
+    val pixels = IntArray(bitmap.width * bitmap.height)
+    bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+    fr.spotifeur.social.QrCodes.decode(pixels, bitmap.width, bitmap.height)
+}.getOrNull()

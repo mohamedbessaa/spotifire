@@ -56,6 +56,13 @@
         <receiver android:name="androidx.mediarouter.media.MediaTransferReceiver" android:exported="true" />
         <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTask"
             android:screenOrientation="portrait">
+            <!-- A friend code: spotifire://friend/<key>, from the camera app or a link. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="spotifire" android:host="friend" />
+            </intent-filter>
             <!-- Links a friend sends: Spotify and YouTube Music tracks, albums, artists and playlists. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />

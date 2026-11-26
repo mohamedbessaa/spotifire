@@ -101,6 +101,13 @@ class MainActivity : ComponentActivity() {
 
     /** A Friends notification was tapped. */
     private fun openFriendsIfAsked(intent: android.content.Intent?) {
+        // A friend code opened from the camera app or a link.
+        intent?.dataString?.let(fr.spotifeur.social.QrCodes::parse)?.let { code ->
+            intent.data = null
+            fr.spotifeur.social.Social.incomingCode.value = code
+            fr.spotifeur.social.Social.openFriends.tryEmit(Unit)
+            return
+        }
         if (intent?.getBooleanExtra(fr.spotifeur.social.SocialNotifier.EXTRA_OPEN_FRIENDS, false) == true) {
             intent.removeExtra(fr.spotifeur.social.SocialNotifier.EXTRA_OPEN_FRIENDS)
             fr.spotifeur.social.Social.openFriends.tryEmit(Unit)
@@ -108,7 +115,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun sharedText(intent: android.content.Intent?): String? = when (intent?.action) {
-        android.content.Intent.ACTION_VIEW -> intent.dataString
+        android.content.Intent.ACTION_VIEW -> intent.dataString?.takeUnless { it.startsWith("spotifire:") }
         android.content.Intent.ACTION_SEND -> intent.getStringExtra(android.content.Intent.EXTRA_TEXT)
         else -> null
     }

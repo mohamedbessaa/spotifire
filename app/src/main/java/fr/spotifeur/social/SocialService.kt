@@ -25,6 +25,8 @@ import java.util.concurrent.TimeUnit
  */
 class SocialService : Service() {
     override fun onBind(intent: Intent?) = null
+    override fun onCreate() { super.onCreate(); running = true }
+    override fun onDestroy() { running = false; super.onDestroy() }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         SocialNotifier.channels(this)
@@ -51,6 +53,12 @@ class SocialService : Service() {
     companion object {
         private const val NOTIFICATION = 4100
 
+        /**
+         * True while the service lives. Starting it again would post its notification again: a notification the
+         * user swiped away came back at every app launch and every 15-minute check.
+         */
+        @Volatile var running = false; private set
+
         /** Applies the chosen mode; called at app start, at boot and when the setting changes. */
         fun apply(context: Context) {
             val app = context.applicationContext
@@ -61,7 +69,7 @@ class SocialService : Service() {
             }
             SocialSync.schedule(app)
             if (SocialMode.instant(app)) {
-                runCatching { ContextCompat.startForegroundService(app, Intent(app, SocialService::class.java)) }
+                if (!running) runCatching { ContextCompat.startForegroundService(app, Intent(app, SocialService::class.java)) }
             } else {
                 app.stopService(Intent(app, SocialService::class.java))
                 Social.init(app); Social.start()
@@ -104,7 +112,7 @@ class SocialSync(context: Context, params: WorkerParameters) : CoroutineWorker(c
         Social.init(applicationContext)
         // Instant mode: bring the connection back if Android stopped it (allowed when Friends runs without battery
         // limits; otherwise Android refuses and the short sync below still collects what arrived).
-        if (SocialMode.instant(applicationContext)) runCatching {
+        if (SocialMode.instant(applicationContext) && !SocialService.running) runCatching {
             ContextCompat.startForegroundService(applicationContext, Intent(applicationContext, SocialService::class.java))
         }
         val wasRunning = Social.snapshot.value.connected

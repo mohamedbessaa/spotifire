@@ -312,20 +312,14 @@ object Social {
         return Directory(m).lookup(query.trim()).filterNot { it.pubKey == me }
     }
 
-    /** What the QR code on the Friends screen holds: our key and name, read only by Spotifire's own scanner. */
-    fun qrPayload(): String? {
-        val me = mutable.value.me ?: return null
-        return QR_PREFIX + me + "?name=" + java.net.URLEncoder.encode(mutable.value.profile.name, "UTF-8")
-    }
+    /** What the QR code on the Friends screen holds: a link to add us, read by Spotifire (see [QrCodes]). */
+    fun qrPayload(): String? = mutable.value.me?.let { QrCodes.payload(it, mutable.value.profile.name) }
 
-    /** A scanned code as (public key, name), or null when it is not a Spotifire friend code. */
-    fun parseQr(text: String): Pair<String, String>? {
-        if (!text.startsWith(QR_PREFIX)) return null
-        val key = text.removePrefix(QR_PREFIX).substringBefore('?').lowercase()
-        if (!key.matches(Regex("[0-9a-f]{64}"))) return null
-        val name = text.substringAfter("?name=", "").let { runCatching { java.net.URLDecoder.decode(it, "UTF-8") }.getOrDefault("") }
-        return key to name.take(Directory.MAX_NAME)
-    }
+    /** A scanned or opened code as (public key, name), or null when it is not a Spotifire friend code. */
+    fun parseQr(text: String): (Pair<String, String>)? = QrCodes.parse(text)
+
+    /** A friend code opened from outside (camera app, link): the Friends tab shows it, ready to add. */
+    val incomingCode = MutableStateFlow<Pair<String, String>?>(null)
 
     private suspend fun publishDirectory() {
         val m = messenger ?: return
@@ -465,7 +459,6 @@ object Social {
             inbox = s.inbox, outbox = s.outbox, profiles = s.profiles, listening = s.listeningAt(System.currentTimeMillis() / 1000))
     }
 
-    private const val QR_PREFIX = "spotifire:friend:"
     internal const val PUBLIC_THUMB = "public_thumb"
     private const val PUBLIC_THUMB_SHA = "public_thumb_sha"
     private const val PHOTO_REF = "photo_ref"

@@ -60,6 +60,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import fr.spotifeur.SpotifeurModel
+import fr.spotifeur.social.DirectoryEntry
 import fr.spotifeur.social.Friend
 import fr.spotifeur.social.FriendRequest
 import fr.spotifeur.social.Handles
@@ -101,6 +102,9 @@ private fun FriendsHome(model: SpotifeurModel, snap: SocialSnapshot, bottomPaddi
     var showingCode by remember { mutableStateOf(false) }
     var settings by remember { mutableStateOf(false) }
     var profileOf by remember { mutableStateOf<Friend?>(null) }
+    // A friend code opened from the camera app or a link: shown in Add friends, ready to add.
+    val incoming by Social.incomingCode.collectAsStateWithLifecycle()
+    incoming?.let { (key, name) -> AddFriendSheet(snap, DirectoryEntry(key, name, null)) { Social.incomingCode.value = null } }
     if (adding) AddFriendSheet(snap) { adding = false }
     if (showingCode) MyCodeSheet(snap) { showingCode = false }
     if (settings) FriendsSettingsSheet(snap) { settings = false }
